@@ -694,15 +694,67 @@ procdump(void)
   }
 }
 
-void
-dump(void){
-  struct proc* p = myproc();
-  if(p == 0){
+void dump(void) {
+  struct proc *p = myproc();
+  if (p == 0) {
     printf("\nFailed to get current process\n");
     return;
   }
-  for(int i = 0; i <= 9; ++i){
-    //Assuming int is int32
-    printf("s%d = %d\n", i+2, (int)*(&p->trapframe->s2 + i));
+  //p->lock is not held, since only trapframe is used
+  //and it's private to process
+  for (int i = 0; i <= 9; ++i) {
+    // Assuming int is int32
+    printf("s%d = %d\n", i + 2, (int)*(&p->trapframe->s2 + i));
   }
+}
+
+int 
+safegetpid(struct proc *p){
+  int pid = 0;
+  acquire(&p->lock);
+  pid = p->pid;
+  release(&p->lock);
+  return pid;
+}
+
+struct proc* 
+safegetparent(struct proc *p){
+  struct proc * parent = 0;
+  acquire(&wait_lock);
+  parent = p->parent;
+  release(&wait_lock);
+  return parent;
+}
+
+int 
+dump2(int target_pid, int register_num, uint64 return_addr) {
+  if (register_num > 11 || register_num < 2) {
+    return -3; // Invalid reg num argument
+  }
+  struct proc *caller;
+  int caller_pid = 0;
+  caller = myproc();
+  if (caller == 0) {
+    return -1; // Failed to get caller proc
+  }
+  caller_pid = safegetpid(caller);
+
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++) {
+    int pid = safegetpid(p);
+    if (pid == target_pid) {
+      if (caller_pid == pid || caller_pid == safegetpid(safegetparent(p))) {
+        int status = copyout(caller->pagetable, return_addr,
+                             (char *)(&p->trapframe->s2 + register_num - 2),
+                             sizeof(int));
+        if (status < 0) {
+          return -4; // Failed to write result
+        }
+        return 0;
+      } else {
+        return -1; // Caller don't have rights
+      }
+    }
+  }
+  return -2; // Failed to find target pid
 }
