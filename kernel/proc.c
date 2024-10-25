@@ -693,3 +693,16 @@ procdump(void)
     printf("\n");
   }
 }
+
+void
+dump(void){
+  struct proc* p = myproc();
+  if(p == 0){
+    printf("\nFailed to get current process\n");
+    return;
+  }
+  for(int i = 0; i <= 9; ++i){
+    //Assuming int is int32
+    printf("s%d = %d\n", i+2, (int)*(&p->trapframe->s2 + i));
+  }
+}
