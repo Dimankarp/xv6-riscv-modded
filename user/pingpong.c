@@ -1,6 +1,13 @@
 #include "kernel/types.h"
 #include "user/user.h"
 
+#define EXIT_ON_ERR(status)                                                    \
+  do {                                                                         \
+    if (status == -1) {                                                        \
+      exit(1);                                                                 \
+    }                                                                          \
+  } while (0)
+
 int 
 main(int argc, char *argv[]) {
   /*
@@ -10,17 +17,20 @@ main(int argc, char *argv[]) {
   */
   int ppw[2]; // pipes parent write
   int psw[2]; // pipes son write
-  pipe(ppw);
-  pipe(psw);
-  char buf[5] = {0};
+  EXIT_ON_ERR(pipe(ppw));
+  EXIT_ON_ERR(pipe(psw));
 
-  if (fork() == 0) {
-    read(ppw[0], buf, 5);
+  char buf[5] = {0};
+  int pid = fork();
+  EXIT_ON_ERR(pid);
+
+  if (pid == 0) {
+    EXIT_ON_ERR(read(ppw[0], buf, 5));
     printf("%d: got %s\n", getpid(), buf);
-    write(psw[1], "pong", 5);
+    EXIT_ON_ERR(write(psw[1], "pong", 5));
   } else {
-    write(ppw[1], "ping", 5);
-    read(psw[0], buf, 5);
+    EXIT_ON_ERR(write(ppw[1], "ping", 5));
+    EXIT_ON_ERR(read(psw[0], buf, 5));
     printf("%d: got %s\n", getpid(), buf);
   }
 
