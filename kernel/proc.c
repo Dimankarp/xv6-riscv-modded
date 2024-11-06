@@ -693,3 +693,89 @@ procdump(void)
     printf("\n");
   }
 }
+
+void 
+dump(void) {
+  struct proc *p = myproc();
+  //p->lock is not held, since only trapframe is used
+  //and it's private to process
+  for (int i = 0; i <= 9; ++i) {
+    // Assuming int is int32
+    printf("s%d = %d\n", i + 2, (int)*(&p->trapframe->s2 + i));
+  }
+}
+
+static int 
+safegetpid(struct proc *p){
+  int pid = 0;
+  acquire(&p->lock);
+  pid = p->pid;
+  release(&p->lock);
+  return pid;
+}
+
+static int
+isrelativeof(struct proc* target, int ancestor_pid){
+  if (target->pid == ancestor_pid) {
+    return 1;
+  }
+  acquire(&wait_lock);
+  struct proc *parent = target->parent;
+  while (parent != initproc) {
+    acquire(&parent->lock);
+    if (parent->pid == ancestor_pid) {
+      release(&parent->lock);
+      release(&wait_lock);
+      return 1;
+    }
+    struct proc* newparent = parent->parent;
+    release(&parent->lock);
+    parent = newparent;
+  }
+
+  release(&wait_lock);
+  return 0;
+}
+
+
+static int
+copyoutreg(struct proc* p, int register_num, uint64 return_addr, pagetable_t pagetable){
+  uint64 *regadr = (&p->trapframe->s2 + register_num - 2);
+  int status = copyout(pagetable, return_addr, (char *)regadr, sizeof(int));
+  if (status < 0) {
+    return -4;
+  }
+  return 0;
+}
+
+int 
+dump2(int target_pid, int register_num, uint64 return_addr) {
+  if (register_num > 11 || register_num < 2) {
+    return -3; // Invalid reg num argument
+  }
+  struct proc *caller;
+  int caller_pid = 0;
+  caller = myproc();
+  caller_pid = safegetpid(caller);
+
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if (p->pid == target_pid) {
+      /* Leaving this check here and not in copyoutreg,
+      because it's a syscall security feature and shouldn't
+      be kept on kernel level
+      */
+      if (isrelativeof(p, caller_pid)) {
+        int status =
+            copyoutreg(p, register_num, return_addr, caller->pagetable);
+        release(&p->lock);
+        return status;
+      }
+      release(&p->lock);
+      return -1; // Caller don't have rights
+    }
+    release(&p->lock);
+  }
+  return -2; // Failed to find target pid
+}
