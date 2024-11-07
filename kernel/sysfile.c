@@ -315,7 +315,7 @@ sys_open(void)
     return -1;
 
   begin_op();
-
+symreopen:
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
@@ -333,6 +333,16 @@ sys_open(void)
       end_op();
       return -1;
     }
+    if(ip->type == T_SYM){
+      if(readi(ip, 0, (uint64)path, 0, MAXPATH) <= 0){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      } 
+      iunlockput(ip);
+      goto symreopen;
+    }
+
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
@@ -403,6 +413,46 @@ sys_mknod(void)
   }
   iunlockput(ip);
   end_op();
+  return 0;
+}
+
+uint64
+sys_mksym(void)
+{
+  char path[MAXPATH];
+  int checkexistence;
+  struct inode *ip;
+
+  argint(2, &checkexistence);
+
+  begin_op();
+
+  // Getting link target if required
+  if (checkexistence) {
+    if (argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0) {
+      end_op();
+      return -1;
+    }
+  }
+
+  // Getting new link path
+  if (argstr(1, path, MAXPATH) == 0) {
+    end_op();
+    return -1;
+  }
+
+  if ((ip = create(path, T_SYM, 0, 0)) == 0) {
+    return -1;
+  }
+
+  // Copies same path second time if checkexistence!=0
+  argstr(0, path, MAXPATH);
+
+  writei(ip, 0, (uint64)path, 0, MAXPATH);
+
+  iunlock(ip);
+  end_op();
+
   return 0;
 }
 
