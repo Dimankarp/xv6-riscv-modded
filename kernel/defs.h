@@ -54,6 +54,7 @@ int             readi(struct inode*, int, uint64, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, int, uint64, uint, uint);
 void            itrunc(struct inode*);
+int             symlink_unwrap(char*, struct inode*, int);
 
 // ramdisk.c
 void            ramdiskinit(void);
@@ -134,6 +135,7 @@ char*           safestrcpy(char*, const char*, int);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
+void            swapptr(void**, void**);
 
 // syscall.c
 void            argint(int, int*);

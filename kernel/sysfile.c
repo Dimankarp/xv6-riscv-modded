@@ -16,6 +16,7 @@
 #include "file.h"
 #include "fcntl.h"
 
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -315,7 +316,6 @@ sys_open(void)
     return -1;
 
   begin_op();
-symreopen:
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
@@ -323,6 +323,7 @@ symreopen:
       return -1;
     }
   } else {
+  symreopen:
     if((ip = namei(path)) == 0){
       end_op();
       return -1;
@@ -334,15 +335,14 @@ symreopen:
       return -1;
     }
     if(ip->type == T_SYM){
-      if(readi(ip, 0, (uint64)path, 0, MAXPATH) <= 0){
+      if(symlink_unwrap(path, ip, 1) != 0){
         iunlockput(ip);
         end_op();
         return -1;
-      } 
+      }
       iunlockput(ip);
       goto symreopen;
     }
-
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
@@ -430,9 +430,11 @@ sys_mksym(void)
   // Getting link target if required
   if (checkexistence) {
     if (argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0) {
+      
       end_op();
       return -1;
     }
+    iput(ip);
   }
 
   // Getting new link path
@@ -448,9 +450,9 @@ sys_mksym(void)
   // Copies same path second time if checkexistence!=0
   argstr(0, path, MAXPATH);
 
-  writei(ip, 0, (uint64)path, 0, MAXPATH);
+  writei(ip, 0, (uint64)path, 0, strlen(path));
 
-  iunlock(ip);
+  iunlockput(ip);
   end_op();
 
   return 0;
@@ -462,13 +464,30 @@ sys_chdir(void)
   char path[MAXPATH];
   struct inode *ip;
   struct proc *p = myproc();
-  
+
+  if(argstr(0, path, MAXPATH) < 0){
+    return -1;
+  }
+
   begin_op();
-  if(argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0){
+  symreopen:
+  if((ip = namei(path)) == 0){
     end_op();
     return -1;
   }
   ilock(ip);
+
+  if(ip->type == T_SYM){
+    if (symlink_unwrap(path, ip, 1) != 0) {
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    printf("%s\n", path);
+    iunlockput(ip);
+    goto symreopen;
+  }
+  printf("Ended with%s\n", path);
   if(ip->type != T_DIR){
     iunlockput(ip);
     end_op();

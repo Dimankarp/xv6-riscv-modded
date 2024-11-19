@@ -105,3 +105,11 @@ strlen(const char *s)
   return n;
 }
 
+void
+swapptr(void** a, void** b)
+{
+    void* temp = *a;
+    *a = *b;
+    *b = temp;
+}
+

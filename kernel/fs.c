@@ -538,6 +538,41 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
   return tot;
 }
 
+// Symlink
+
+static char *
+getlastelem(char* path);
+// Unwraps symlink in path.
+// ilock() is expected to be held on SYMP.
+// PATH must be at least MAXPATH size & 
+// contain SYMP name as last element.
+// Returns 0 on success and -1 on failure.
+// If SWAP_LAST is non 0 - swaps last element of
+// path with contents of symbolic link.
+int
+symlink_unwrap(char* path, struct inode* symp, int swap_last){
+  char* el;
+  char symbuf[MAXPATH];
+  int symn;
+
+  if((symn=readi(symp, 0, (uint64)symbuf, 0, MAXPATH)) <= 0){
+    return -1;
+  }
+  if(swap_last){
+  if((el =getlastelem(path)) == 0){
+    return -1;
+  }
+  } else{
+    el = path;
+  }
+  if(symn + (el - path) > MAXPATH){
+    return -1;
+  }
+  memmove(el, symbuf, symn);
+  return 0;
+}
+
+
 // Directories
 
 int
@@ -644,6 +679,37 @@ skipelem(char *path, char *name)
   return path;
 }
 
+static char*
+getlastelem(char* path){
+    char* s;
+   st:
+    while(*path == '/')
+      path++;
+    if(*path == 0)
+      return 0;
+    s = path;
+    while(*path != '/' && *path != 0)
+        path++;
+    if(*path == 0)
+        return s;
+    goto st;
+}
+
+static int
+concatpaths(char* a, char*b, char* buf, uint64 bufsz){
+  int alen = strlen(a);
+  int blen = strlen(b);
+  //2 for '/' & '\0'
+  if(alen + blen + 2 > bufsz){
+    return -1;
+  }
+  memmove(buf, a, alen);
+  buf[alen]='/';
+  memmove(buf + (alen + 1), b, blen);
+  buf[alen+blen+1] = '\0';
+  return 0;
+}
+
 // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
 // path element into name, which must have room for DIRSIZ bytes.
@@ -651,8 +717,14 @@ skipelem(char *path, char *name)
 static struct inode*
 namex(char *path, int nameiparent, char *name)
 {
-  struct inode *ip, *next;
-
+  struct inode *ip, *next, *prev;
+  //Two bufs are required because of multiple symlink shenanigans.
+  //Also could've put constraint on char* path's size.
+  char mainbuf[MAXPATH] = {0};
+  char auxbuf[MAXPATH] = {0};
+  char* mainpath = mainbuf;
+  char* auxpath = auxbuf;
+  char* prevpath = path;
   if(*path == '/')
     ip = iget(ROOTDEV, ROOTINO);
   else
@@ -660,7 +732,8 @@ namex(char *path, int nameiparent, char *name)
 
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
-    if(ip->type != T_DIR){
+    
+    if((ip->type & (T_DIR|T_SYM)) == 0 ){
       iunlockput(ip);
       return 0;
     }
@@ -669,11 +742,33 @@ namex(char *path, int nameiparent, char *name)
       iunlock(ip);
       return ip;
     }
+
+    if(ip->type == T_SYM){
+      if(symlink_unwrap(mainpath, ip, 0) <0){
+        iunlockput(ip);
+        return 0;
+      }
+      if(concatpaths(mainpath, prevpath, mainpath, MAXPATH) < 0){
+        iunlockput(ip);
+        return 0; 
+      }
+      printf("New path %s", "wtf");
+      path = mainpath;
+      swapptr((void**)&mainpath, (void**)&auxpath);
+      iunlockput(ip);
+      prev = ip;
+      ip = prev;
+      continue;
+    }
+
     if((next = dirlookup(ip, name, 0)) == 0){
       iunlockput(ip);
       return 0;
     }
     iunlockput(ip);
+
+    prevpath = path;
+    prev = ip;
     ip = next;
   }
   if(nameiparent){
