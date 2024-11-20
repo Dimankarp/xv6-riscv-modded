@@ -483,11 +483,9 @@ sys_chdir(void)
       end_op();
       return -1;
     }
-    printf("%s\n", path);
     iunlockput(ip);
     goto symreopen;
   }
-  printf("Ended with%s\n", path);
   if(ip->type != T_DIR){
     iunlockput(ip);
     end_op();

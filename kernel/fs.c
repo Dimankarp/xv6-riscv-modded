@@ -552,7 +552,7 @@ getlastelem(char* path);
 int
 symlink_unwrap(char* path, struct inode* symp, int swap_last){
   char* el;
-  char symbuf[MAXPATH];
+  char symbuf[MAXPATH] = {0};
   int symn;
 
   if((symn=readi(symp, 0, (uint64)symbuf, 0, MAXPATH)) <= 0){
@@ -569,6 +569,7 @@ symlink_unwrap(char* path, struct inode* symp, int swap_last){
     return -1;
   }
   memmove(el, symbuf, symn);
+  el[symn] = '\0';
   return 0;
 }
 
@@ -588,7 +589,6 @@ dirlookup(struct inode *dp, char *name, uint *poff)
 {
   uint off, inum;
   struct dirent de;
-
   if(dp->type != T_DIR)
     panic("dirlookup not DIR");
 
@@ -717,7 +717,7 @@ concatpaths(char* a, char*b, char* buf, uint64 bufsz){
 static struct inode*
 namex(char *path, int nameiparent, char *name)
 {
-  struct inode *ip, *next, *prev;
+  struct inode *ip, *next, *prev = 0;
   //Two bufs are required because of multiple symlink shenanigans.
   //Also could've put constraint on char* path's size.
   char mainbuf[MAXPATH] = {0};
@@ -729,19 +729,14 @@ namex(char *path, int nameiparent, char *name)
     ip = iget(ROOTDEV, ROOTINO);
   else
     ip = idup(myproc()->cwd);
-
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
-    
+  
     if((ip->type & (T_DIR|T_SYM)) == 0 ){
       iunlockput(ip);
       return 0;
     }
-    if(nameiparent && *path == '\0'){
-      // Stop one level early.
-      iunlock(ip);
-      return ip;
-    }
+
 
     if(ip->type == T_SYM){
       if(symlink_unwrap(mainpath, ip, 0) <0){
@@ -752,25 +747,34 @@ namex(char *path, int nameiparent, char *name)
         iunlockput(ip);
         return 0; 
       }
-      printf("New path %s", "wtf");
       path = mainpath;
       swapptr((void**)&mainpath, (void**)&auxpath);
       iunlockput(ip);
-      prev = ip;
       ip = prev;
+      prev = 0;
       continue;
     }
 
+
+    if(nameiparent && *path == '\0'){
+      // Stop one level early.
+      iunlock(ip);
+      return ip;
+    }
+  
     if((next = dirlookup(ip, name, 0)) == 0){
       iunlockput(ip);
       return 0;
     }
-    iunlockput(ip);
-
     prevpath = path;
+    iunlock(ip);
+    if(prev != 0)
+      iput(prev);
     prev = ip;
     ip = next;
   }
+  if(prev != 0)
+    iput(prev);
   if(nameiparent){
     iput(ip);
     return 0;
