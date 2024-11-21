@@ -27,7 +27,8 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  freerange(end, (void*)KALLOC_END);
+  bd_init((void*)KALLOC_END, (void*)(PHYSTOP-1)); //buddy allocator
 }
 
 void
