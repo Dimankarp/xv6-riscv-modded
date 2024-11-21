@@ -27,8 +27,7 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)KALLOC_END);
-  bd_init((void*)KALLOC_END, (void*)(PHYSTOP-1)); //buddy allocator
+  bd_init((char*)PGROUNDUP((uint64)end), (void*)(PHYSTOP-1)); //buddy allocator
 }
 
 void
@@ -47,20 +46,13 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
-  struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
-
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  bd_free(pa);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -69,15 +61,10 @@ kfree(void *pa)
 void *
 kalloc(void)
 {
-  struct run *r;
+void *page;
+  page = bd_malloc(PGSIZE);
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
-
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  if(page)
+    memset((char*)page, 5, PGSIZE); // fill with junk
+  return page;
 }
