@@ -37,10 +37,6 @@
 // for use by the kernel and user pages
 // from physical address 0x80000000 to PHYSTOP.
 #define KERNBASE 0x80000000L
-// end of kalloc-realm memory
-// next addresses up until PHYSTOP
-// are managed by bd_alloc.
-#define KALLOC_END (KERNBASE + 96*1024*1024)
 #define PHYSTOP (KERNBASE + 128*1024*1024)
 
 // map the trampoline page to the highest address,

@@ -9,34 +9,13 @@
 #include "riscv.h"
 #include "defs.h"
 
-void freerange(void *pa_start, void *pa_end);
-
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
-
-struct run {
-  struct run *next;
-};
-
-struct {
-  struct spinlock lock;
-  struct run *freelist;
-} kmem;
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
-  bd_init((char*)PGROUNDUP((uint64)end), (void*)(PHYSTOP)); //buddy allocator
-}
-
-void
-freerange(void *pa_start, void *pa_end)
-{
-  char *p;
-  p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+  bd_init((char *)PGROUNDUP((uint64)end), (void *)(PHYSTOP)); // buddy allocator
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -47,7 +26,7 @@ void
 kfree(void *pa)
 {
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+  if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
@@ -61,10 +40,10 @@ kfree(void *pa)
 void *
 kalloc(void)
 {
-void *page;
+  void *page;
   page = bd_malloc(PGSIZE);
 
-  if(page)
-    memset((char*)page, 5, PGSIZE); // fill with junk
+  if (page)
+    memset((char *)page, 5, PGSIZE); // fill with junk
   return page;
 }
