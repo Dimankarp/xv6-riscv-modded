@@ -682,7 +682,7 @@ skipelem(char *path, char *name)
 static char*
 getlastelem(char* path){
     char* s;
-   st:
+   for(;;){
     while(*path == '/')
       path++;
     if(*path == 0)
@@ -692,7 +692,7 @@ getlastelem(char* path){
         path++;
     if(*path == 0)
         return s;
-    goto st;
+   }
 }
 
 static int
