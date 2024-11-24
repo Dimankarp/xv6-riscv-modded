@@ -30,7 +30,6 @@ ls(char *path)
   int fd;
   struct dirent de;
   struct stat st;
-
   if((fd = open(path, O_RDONLY)) < 0){
     fprintf(2, "ls: cannot open %s\n", path);
     return;
@@ -45,9 +44,9 @@ ls(char *path)
   switch(st.type){
   case T_DEVICE:
   case T_FILE:
+  case T_SYM:
     printf("%s %d %d %d\n", fmtname(path), st.type, st.ino, (int) st.size);
     break;
-
   case T_DIR:
     if(strlen(path) + 1 + DIRSIZ + 1 > sizeof buf){
       printf("ls: path too long\n");

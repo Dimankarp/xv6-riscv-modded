@@ -38,3 +38,7 @@ jobs:
       - name: Test Basic
         if: ${{ ! startsWith(github.head_ref, 'lab-') }}
         run: sh ./ci/test/run.sh usertests
+      
+      - name: Test Symlink
+        if: ${{ github.head_ref == 'symlink' }}
+        run: sh ./ci/test/run.sh usertests

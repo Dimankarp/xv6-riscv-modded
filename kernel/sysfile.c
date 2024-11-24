@@ -16,6 +16,7 @@
 #include "file.h"
 #include "fcntl.h"
 
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -315,7 +316,6 @@ sys_open(void)
     return -1;
 
   begin_op();
-
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
@@ -323,6 +323,7 @@ sys_open(void)
       return -1;
     }
   } else {
+  symreopen:
     if((ip = namei(path)) == 0){
       end_op();
       return -1;
@@ -332,6 +333,15 @@ sys_open(void)
       iunlockput(ip);
       end_op();
       return -1;
+    }
+    if(ip->type == T_SYM){
+      if(symlink_unwrap(path, ip, 1) != 0){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      iunlockput(ip);
+      goto symreopen;
     }
   }
 
@@ -407,18 +417,75 @@ sys_mknod(void)
 }
 
 uint64
+sys_mksym(void)
+{
+  char path[MAXPATH];
+  int checkexistence;
+  struct inode *ip;
+
+  argint(2, &checkexistence);
+
+  begin_op();
+
+  // Getting link target if required
+  if (checkexistence) {
+    if (argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0) {
+      
+      end_op();
+      return -1;
+    }
+    iput(ip);
+  }
+
+  // Getting new link path
+  if (argstr(1, path, MAXPATH) == 0) {
+    end_op();
+    return -1;
+  }
+
+  if ((ip = create(path, T_SYM, 0, 0)) == 0) {
+    return -1;
+  }
+
+  // Copies same path second time if checkexistence!=0
+  argstr(0, path, MAXPATH);
+
+  writei(ip, 0, (uint64)path, 0, strlen(path));
+
+  iunlockput(ip);
+  end_op();
+
+  return 0;
+}
+
+uint64
 sys_chdir(void)
 {
   char path[MAXPATH];
   struct inode *ip;
   struct proc *p = myproc();
-  
+
+  if(argstr(0, path, MAXPATH) < 0){
+    return -1;
+  }
+
   begin_op();
-  if(argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0){
+  symreopen:
+  if((ip = namei(path)) == 0){
     end_op();
     return -1;
   }
   ilock(ip);
+
+  if(ip->type == T_SYM){
+    if (symlink_unwrap(path, ip, 1) != 0) {
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    iunlockput(ip);
+    goto symreopen;
+  }
   if(ip->type != T_DIR){
     iunlockput(ip);
     end_op();
