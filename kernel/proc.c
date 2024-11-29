@@ -14,7 +14,7 @@ struct cpu cpus[NCPU];
 
 struct proc *initproc;
 
-// Could've used initproc's node as root
+// could've used initproc's node as root
 // but this requires userinit before procinit...
 Proc_list procs;
 // helps synchronize operations on procs list (proc->node)
@@ -108,14 +108,34 @@ allocpid()
 int
 allocstack()
 {
-  int sindx;
-  
-  acquire(&stack_lock);
-  sindx = nextkstack;
-  nextkstack = nextkstack + 1;
-  release(&stack_lock);
+  int sindx, start, flag;
 
-  return sindx;
+  acquire(&stack_lock);
+  acquire(&procs_lock);
+
+  sindx = nextkstack;
+  start = nextkstack;
+
+  do {
+    flag = 0;
+    struct proc *p = (struct proc *)procs.next;
+    for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
+      if (p->kstackindx == sindx) {
+        sindx = (sindx + 1) % NPROC;
+        flag = 1;
+        break;
+      }
+    }
+    if (flag)
+      continue;
+
+    release(&procs_lock);
+    nextkstack = (sindx + 1) % NPROC;
+    release(&stack_lock);
+    return sindx;
+  } while (sindx != start);
+
+  panic("allocstack");
 }
 
 void
@@ -123,7 +143,7 @@ decprocnum()
 {
 
   acquire(&procs_num_lock);
-  if(procs_num == 0)
+  if (procs_num == 0)
     panic("decprocnum");
   procs_num--;
   release(&procs_num_lock);
@@ -139,18 +159,18 @@ allocproc(void)
   struct proc *p;
 
   acquire(&procs_num_lock);
-  if(procs_num >= NPROC){
+  if (procs_num >= NPROC) {
     release(&procs_num_lock);
     return 0;
   }
   procs_num++;
   release(&procs_num_lock);
 
-  if((p=bd_malloc(sizeof(struct proc))) == 0){
+  if ((p = bd_malloc(sizeof(struct proc))) == 0) {
     decprocnum();
     return 0;
   }
-  memset(p,0, sizeof(struct proc));
+  memset(p, 0, sizeof(struct proc));
 
   initlock(&p->lock, "proc");
   int sindx = allocstack();
@@ -159,8 +179,9 @@ allocproc(void)
   p->kstack = KSTACK((int)(sindx));
   p->pid = allocpid();
   p->state = USED;
+  
   // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+  if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
     freeprocfileds(p);
     freeproc(p);
     decprocnum();
@@ -169,7 +190,7 @@ allocproc(void)
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
-  if(p->pagetable == 0){
+  if (p->pagetable == 0) {
     freeprocfileds(p);
     freeproc(p);
     decprocnum();
@@ -183,7 +204,7 @@ allocproc(void)
   p->context.sp = p->kstack + PGSIZE;
 
   acquire(&procs_lock);
-  lst_push(&procs, (void*)&p->node);
+  lst_push(&procs, (void *)&p->node);
   release(&procs_lock);
 
   acquire(&p->lock);
@@ -201,7 +222,7 @@ freeprocfileds(struct proc *p)
   if (p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   if (p->kstackindx >= 0)
-    kvmfreestack(p->kstackindx);
+    kvmunmaptack(p->kstackindx);
 }
 
 // unlink proc structure from procs chain.
@@ -389,12 +410,17 @@ void
 reparent(struct proc *p)
 {
   struct proc *pp;
-  restart:
+restart:
   acquire(&procs_lock);
-  pp = (struct proc*)procs.next;
-  for(; (Proc_list*)pp != &procs; pp = (struct proc *)pp->node.next){
-    if(pp->parent == p){
+  pp = (struct proc *)procs.next;
+  for (; (Proc_list *)pp != &procs; pp = (struct proc *)pp->node.next) {
+    if (pp->parent == p) {
       pp->parent = initproc;
+      // releasing lock and then
+      // starting from the beginning - 
+      // but could've used recursive lock
+      // (notice: wakeup inside cycles through 
+      // procs with procs_lock acquired)
       release(&procs_lock);
       wakeup(initproc);
       goto restart;
@@ -463,7 +489,7 @@ wait(uint64 addr)
     // Scan through procs looking for exited children.
     havekids = 0;
     acquire(&procs_lock);
-    pp = (struct proc*)procs.next;
+    pp = (struct proc *)procs.next;
     for (; (Proc_list *)pp != &procs; pp = (struct proc *)pp->node.next) {
       if (pp->parent == p) {
         // make sure the child isn't still in exit() or swtch().
@@ -480,12 +506,16 @@ wait(uint64 addr)
             release(&wait_lock);
             return -1;
           }
+
           freeprocfileds(pp);
+
           unlinkproc(pp);
           release(&procs_lock);
+
           release(&pp->lock);
           freeproc(pp);
           release(&wait_lock);
+
           return pid;
         }
         release(&pp->lock);
@@ -530,7 +560,7 @@ scheduler(void)
     for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
-        //Pseudo-LRU
+        // Pseudo-LRU
         lst_rotate(&procs);
 
         release(&procs_lock);
@@ -766,7 +796,9 @@ procdump(void)
   };
   struct proc *p;
   char *state;
-
+  acquire(&procs_num_lock);
+  printf("Num of procs: %d", procs_num);
+  release(&procs_num_lock);
   printf("\n");
   p = (struct proc *)procs.next;
   for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {

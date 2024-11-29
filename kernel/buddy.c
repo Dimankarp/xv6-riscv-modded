@@ -36,6 +36,7 @@ typedef struct sz_info Sz_info;
 static Sz_info *bd_sizes;
 static void *bd_base;  // start address of memory managed by the buddy allocator
 static struct spinlock lock;
+static int freebalance = 0;
 
 // Return 1 if bit at position index in array is set to 1
 int bit_isset(char *array, int index) {
@@ -146,6 +147,7 @@ void *bd_malloc(uint64 nbytes) {
 
   // Found a block; pop it and potentially split it.
   char *p = lst_pop(&bd_sizes[k].free);
+  freebalance += BLK_SIZE(k);
   bit_flip(bd_sizes[k].pair_xor, blk_pair_index(k, p));
   for (; k > fk; k--) {
     // split a block at size k and mark one half allocated at size k-1
@@ -195,6 +197,13 @@ void bd_free(void *p) {
     bit_clear(bd_sizes[k + 1].split, blk_index(k + 1, p));
   }
   lst_push(&bd_sizes[k].free, p);
+  freebalance -= BLK_SIZE(k);
+  release(&lock);
+}
+
+void bd_print_balance() {
+  acquire(&lock);
+  printf("Current balance: %d", freebalance);
   release(&lock);
 }
 
