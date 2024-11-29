@@ -21,6 +21,13 @@ Proc_list procs;
 // must be acquired before any p->lock.
 struct spinlock procs_lock;
 
+// could've used other locks to synchronize this
+// but it looks like separate look would benefit
+// perfomance (procs_locks is used at times
+// when procs count doesn't change)
+int procs_num = 0;
+struct spinlock procs_num_lock;
+
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -50,6 +57,7 @@ procinit(void)
   initlock(&stack_lock, "nextstack");
   initlock(&wait_lock, "wait_lock");
   initlock(&procs_lock, "procs_lock");
+  initlock(&procs_num_lock, "procs_num");
   lst_init(&procs);
 }
 
@@ -110,16 +118,36 @@ allocstack()
   return sindx;
 }
 
+void
+decprocnum()
+{
+
+  acquire(&procs_num_lock);
+  if(procs_num == 0)
+    panic("decprocnum");
+  procs_num--;
+  release(&procs_num_lock);
+}
+
 // Allocate and initialize new proc
 // and return with p->lock held.
-// If memory allocation fails, return 0
+// If memory allocation fails or proc limit is reached, return 0
 // current p->lock must be released.
 static struct proc*
 allocproc(void)
 {
   struct proc *p;
 
+  acquire(&procs_num_lock);
+  if(procs_num >= NPROC){
+    release(&procs_num_lock);
+    return 0;
+  }
+  procs_num++;
+  release(&procs_num_lock);
+
   if((p=bd_malloc(sizeof(struct proc))) == 0){
+    decprocnum();
     return 0;
   }
   memset(p,0, sizeof(struct proc));
@@ -127,6 +155,7 @@ allocproc(void)
   initlock(&p->lock, "proc");
   int sindx = allocstack();
   kvmmapstack(sindx);
+  p->kstackindx = sindx;
   p->kstack = KSTACK((int)(sindx));
   p->pid = allocpid();
   p->state = USED;
@@ -134,6 +163,7 @@ allocproc(void)
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeprocfileds(p);
     freeproc(p);
+    decprocnum();
     return 0;
   }
 
@@ -142,6 +172,7 @@ allocproc(void)
   if(p->pagetable == 0){
     freeprocfileds(p);
     freeproc(p);
+    decprocnum();
     return 0;
   }
 
@@ -169,6 +200,8 @@ freeprocfileds(struct proc *p)
     kfree((void *)p->trapframe);
   if (p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if (p->kstackindx >= 0)
+    kvmfreestack(p->kstackindx);
 }
 
 // unlink proc structure from procs chain.
@@ -177,6 +210,7 @@ static void
 unlinkproc(struct proc *p)
 {
   lst_remove(&p->node);
+  decprocnum();
 }
 
 // free proc structure.

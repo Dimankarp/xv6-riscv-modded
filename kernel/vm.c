@@ -55,6 +55,17 @@ kvmmapstack(int sindx){
   kvmmap(kernel_pagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
 }
 
+void
+kvmfreestack(int sindx){
+  pte_t* pte;
+  uint64 pa;
+  if(!(pte = walk(kernel_pagetable,  KSTACK((int)(sindx)), 0)))
+    panic("kvmfreestack");
+  pa = PTE2PA(*pte);
+  kfree((void*)pa);
+}
+
+
 // Initialize the one kernel_pagetable
 void
 kvminit(void)
