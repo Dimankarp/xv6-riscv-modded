@@ -17,7 +17,8 @@ struct proc *initproc;
 // Could've used initproc's node as root
 // but this requires userinit before procinit...
 Proc_list procs;
-// Must be taken before operations with any proc->node
+// helps synchronize operations on procs list (proc->node)
+// must be acquired before any p->lock.
 struct spinlock procs_lock;
 
 int nextpid = 1;
@@ -30,13 +31,15 @@ struct spinlock stack_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
+static void freeprocfileds(struct proc *p);
+static void unlinkproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
-// must be acquired before any p->lock.
+// must be acquired before any p->lock & procs_lock.
 struct spinlock wait_lock;
 
 // initialize the proc table.
@@ -109,7 +112,8 @@ allocstack()
 
 // Allocate and initialize new proc
 // and return with p->lock held.
-// If memory allocation fails, return 0.
+// If memory allocation fails, return 0
+// current p->lock must be released.
 static struct proc*
 allocproc(void)
 {
@@ -118,6 +122,8 @@ allocproc(void)
   if((p=bd_malloc(sizeof(struct proc))) == 0){
     return 0;
   }
+  memset(p,0, sizeof(struct proc));
+
   initlock(&p->lock, "proc");
   int sindx = allocstack();
   kvmmapstack(sindx);
@@ -126,6 +132,7 @@ allocproc(void)
   p->state = USED;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+    freeprocfileds(p);
     freeproc(p);
     return 0;
   }
@@ -133,6 +140,7 @@ allocproc(void)
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
+    freeprocfileds(p);
     freeproc(p);
     return 0;
   }
@@ -149,27 +157,35 @@ allocproc(void)
 
   acquire(&p->lock);
   return p;
-
 }
 
-// free a proc structure and the data hanging from it,
+// free data hanging from proc,
 // including user pages.
 // p->lock must be held.
 static void
-freeproc(struct proc *p)
+freeprocfileds(struct proc *p)
 {
   if (p->trapframe)
     kfree((void *)p->trapframe);
   if (p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+}
 
-  acquire(&procs_lock);
+// unlink proc structure from procs chain.
+// procs_lock must be held.
+static void
+unlinkproc(struct proc *p)
+{
   lst_remove(&p->node);
-  release(&procs_lock);
+}
 
-  release(&p->lock);
+// free proc structure.
+static void
+freeproc(struct proc *p)
+{
   bd_free(p);
 }
+
 
 // Create a user page table for a given process, with no user memory,
 // but with trampoline and trapframe pages.
@@ -290,7 +306,16 @@ fork(void)
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+    acquire(&procs_lock);
+    acquire(&np->lock);
+
+    freeprocfileds(np);
+    unlinkproc(np);
+
+    release(&np->lock);
     freeproc(np);
+    release(&procs_lock);
+
     return -1;
   }
   np->sz = p->sz;
@@ -330,19 +355,22 @@ void
 reparent(struct proc *p)
 {
   struct proc *pp;
+  restart:
   acquire(&procs_lock);
   pp = (struct proc*)procs.next;
   for(; (Proc_list*)pp != &procs; pp = (struct proc *)pp->node.next){
     if(pp->parent == p){
       pp->parent = initproc;
+      release(&procs_lock);
       wakeup(initproc);
+      goto restart;
     }
   }
   release(&procs_lock);
 }
 
 // Exit the current process.  Does not return.
-// An exited process remains in the zombie state
+// An exited process remains in the zombie stateup
 // until its parent calls wait().
 void
 exit(int status)
@@ -414,14 +442,16 @@ wait(uint64 addr)
           if (addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
                                    sizeof(pp->xstate)) < 0) {
             release(&pp->lock);
-            release(&wait_lock);
             release(&procs_lock);
+            release(&wait_lock);
             return -1;
           }
-          freeproc(pp);
-          release(&pp->lock);
-          release(&wait_lock);
+          freeprocfileds(pp);
+          unlinkproc(pp);
           release(&procs_lock);
+          release(&pp->lock);
+          freeproc(pp);
+          release(&wait_lock);
           return pid;
         }
         release(&pp->lock);
@@ -484,11 +514,10 @@ scheduler(void)
       release(&p->lock);
     }
     if(found == 0) {
+      release(&procs_lock);
       // nothing to run; stop running on this core until an interrupt.
       intr_on();
       asm volatile("wfi");
-    } else {
-      release(&procs_lock);
     }
   }
 }
@@ -626,6 +655,7 @@ kill(int pid)
         p->state = RUNNABLE;
       }
       release(&p->lock);
+      release(&procs_lock);
       return 0;
     }
     release(&p->lock);
@@ -701,11 +731,10 @@ procdump(void)
   char *state;
 
   printf("\n");
-  acquire(&procs_lock);
   p = (struct proc *)procs.next;
   for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
     if (p->state == UNUSED)
-      continue;
+      state = "unused";
     if (p->state >= 0 && p->state < NELEM(states) && states[p->state])
       state = states[p->state];
     else
@@ -713,7 +742,6 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
-  release(&procs_lock);
 }
 
 void 
@@ -786,6 +814,7 @@ dump2(int target_pid, int register_num, uint64 return_addr) {
   for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
     acquire(&p->lock);
     if (p->pid == target_pid) {
+      release(&procs_lock);
       /* Leaving this check here and not in copyoutreg,
       because it's a syscall security feature and shouldn't
       be kept on kernel level

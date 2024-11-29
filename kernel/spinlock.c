@@ -29,9 +29,14 @@ acquire(struct spinlock *lk)
   //   a5 = 1
   //   s1 = &lk->locked
   //   amoswap.w.aq a5, a5, (s1)
-  while(__sync_lock_test_and_set(&lk->locked, 1) != 0)
+  int count = 0;
+  while(__sync_lock_test_and_set(&lk->locked, 1) != 0 && count++ < 1000000)
     ;
-
+  
+  if (count >= 1000000){
+    printf("Deadlock found: %s, %d", lk->name, myproc()->pid);
+    panic("deadlock");
+      }
   // Tell the C compiler and the processor to not move loads or stores
   // past this point, to ensure that the critical section's memory
   // references happen strictly after the lock is acquired.
@@ -78,6 +83,86 @@ holding(struct spinlock *lk)
 {
   int r;
   r = (lk->locked && lk->cpu == mycpu());
+  return r;
+}
+
+
+void
+init_recursive_lock(struct recursive_spinlock *rlk, char *name)
+{
+  rlk->name = name;
+  rlk->locked = 0;
+  rlk->cpu = 0;
+  rlk->count = 0;
+}
+
+// Acquire recursive lock.
+// Loops (spins) until the lock is acquired.
+void
+acquire_recursive(struct recursive_spinlock *rlk)
+{
+  push_off(); // disable interrupts to avoid deadlock.
+  if(holding_recursive(rlk)){
+    __sync_synchronize();
+    rlk->count++;
+    return;
+  }
+  // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
+  //   a5 = 1
+  //   s1 = &lk->locked
+  //   amoswap.w.aq a5, a5, (s1)
+  // int count = 0;
+  while(__sync_lock_test_and_set(&rlk->locked, 1) != 0) //&& count++ < 100000000)
+    ;
+  
+  // if (count >= 100000){
+  //   printf("Deadlock found: %s, %d", rlk->name, myproc()->pid);
+  //   panic("deadlock");
+  //     }
+  // Tell the C compiler and the processor to not move loads or stores
+  // past this point, to ensure that the critical section's memory
+  // references happen strictly after the lock is acquired.
+  // On RISC-V, this emits a fence instruction.
+  __sync_synchronize();
+
+  // Record info about lock acquisition for holding() and debugging.
+  rlk->cpu = mycpu();
+  rlk->count = 1;
+}
+
+// Release the lock.
+void release_recursive(struct recursive_spinlock *rlk) {
+  if (!holding_recursive(rlk))
+    panic("recursive_release");
+  // Tell the C compiler and the CPU to not move loads or stores
+  // past this point, to ensure that all the stores in the critical
+  // section are visible to other CPUs before the lock is released,
+  // and that loads in the critical section occur strictly before
+  // the lock is released.
+  // On RISC-V, this emits a fence instruction.
+  __sync_synchronize();
+  if (rlk->count == 0) {
+    // Release the lock, equivalent to lk->locked = 0.
+    // This code doesn't use a C assignment, since the C standard
+    // implies that an assignment might be implemented with
+    // multiple store instructions.
+    // On RISC-V, sync_lock_release turns into an atomic swap:
+    //   s1 = &lk->locked
+    //   amoswap.w zero, zero, (s1)
+    __sync_lock_release(&rlk->locked);
+  } else {
+    rlk->count--;
+  }
+  pop_off();
+}
+
+// Check whether this cpu is holding the recursive lock.
+// Interrupts must be off.
+int
+holding_recursive(struct recursive_spinlock *rlk)
+{
+  int r;
+  r = (rlk->locked && rlk->cpu == mycpu());
   return r;
 }
 

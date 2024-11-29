@@ -71,7 +71,7 @@ sys_read(void)
   struct file *f;
   int n;
   uint64 p;
-
+  printf("READING1");
   argaddr(1, &p);
   argint(2, &n);
   if(argfd(0, 0, &f) < 0)

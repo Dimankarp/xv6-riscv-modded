@@ -5,6 +5,7 @@ struct inode;
 struct pipe;
 struct proc;
 struct spinlock;
+struct recursive_spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
@@ -117,6 +118,10 @@ void            acquire(struct spinlock*);
 int             holding(struct spinlock*);
 void            initlock(struct spinlock*, char*);
 void            release(struct spinlock*);
+void            acquire_recursive(struct recursive_spinlock*);
+int             holding_recursive(struct recursive_spinlock*);
+void            init_recursive_lock(struct recursive_spinlock*, char*);
+void            release_recursive(struct recursive_spinlock*);
 void            push_off(void);
 void            pop_off(void);
 

@@ -99,12 +99,15 @@ int
 fileread(struct file *f, uint64 addr, int n)
 {
   int r = 0;
-
+    printf("READING2\n");
+    procdump();
   if(f->readable == 0)
     return -1;
 
   if(f->type == FD_PIPE){
+      printf("READINGPIPE\n");
     r = piperead(f->pipe, addr, n);
+      printf("READINGPIPE2\n");
   } else if(f->type == FD_DEVICE){
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
       return -1;

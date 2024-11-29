@@ -110,13 +110,17 @@ piperead(struct pipe *pi, uint64 addr, int n)
   char ch;
 
   acquire(&pi->lock);
+    printf("PIPE_IN1\n");
   while(pi->nread == pi->nwrite && pi->writeopen){  //DOC: pipe-empty
+      printf("PIPE_IN_WHILE\n");
     if(killed(pr)){
       release(&pi->lock);
       return -1;
     }
+        printf("PIPE_IN_SLEEP\n");
     sleep(&pi->nread, &pi->lock); //DOC: piperead-sleep
   }
+      printf("PIPE_IN_LEAVE_WHILE\n");
   for(i = 0; i < n; i++){  //DOC: piperead-copy
     if(pi->nread == pi->nwrite)
       break;

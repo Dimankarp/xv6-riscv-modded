@@ -84,7 +84,11 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
 struct proc {
+  // node MUST be first element of proc for correct 
+  // list to proc cast
+  // procs_lock must be held when using this:
   struct list node;
+
   struct spinlock lock;
 
   // p->lock must be held when using these:
