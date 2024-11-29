@@ -36,7 +36,6 @@ typedef struct sz_info Sz_info;
 static Sz_info *bd_sizes;
 static void *bd_base;  // start address of memory managed by the buddy allocator
 static struct spinlock lock;
-static int freebalance = 0;
 
 // Return 1 if bit at position index in array is set to 1
 int bit_isset(char *array, int index) {
@@ -147,7 +146,6 @@ void *bd_malloc(uint64 nbytes) {
 
   // Found a block; pop it and potentially split it.
   char *p = lst_pop(&bd_sizes[k].free);
-  freebalance += BLK_SIZE(k);
   bit_flip(bd_sizes[k].pair_xor, blk_pair_index(k, p));
   for (; k > fk; k--) {
     // split a block at size k and mark one half allocated at size k-1
@@ -197,13 +195,6 @@ void bd_free(void *p) {
     bit_clear(bd_sizes[k + 1].split, blk_index(k + 1, p));
   }
   lst_push(&bd_sizes[k].free, p);
-  freebalance -= BLK_SIZE(k);
-  release(&lock);
-}
-
-void bd_print_balance() {
-  acquire(&lock);
-  printf("Current balance: %d", freebalance);
   release(&lock);
 }
 
@@ -283,8 +274,6 @@ int bd_initfree(void *bd_left, void *bd_right) {
 // Mark the range [bd_base,p) as allocated
 int bd_mark_data_structures(char *p) {
   int meta = p - (char *)bd_base;
-  printf("bd: %d meta bytes for managing %ld bytes of memory\n", meta,
-         BLK_SIZE(MAXSIZE));
   bd_mark(bd_base, p);
   return meta;
 }
@@ -294,7 +283,6 @@ int bd_mark_unavailable(void *end, void *left) {
   int unavailable = BLK_SIZE(MAXSIZE) - (end - bd_base);
   if (unavailable > 0)
     unavailable = ROUNDUP(unavailable, LEAF_SIZE);
-  printf("bd: 0x%x bytes unavailable\n", unavailable);
 
   void *bd_end = bd_base + BLK_SIZE(MAXSIZE) - unavailable;
   bd_mark(bd_end, bd_base + BLK_SIZE(MAXSIZE));
@@ -314,9 +302,6 @@ void bd_init(void *base, void *end) {
   if ((char *)end - p > BLK_SIZE(MAXSIZE)) {
     nsizes++; // round up to the next power of 2
   }
-
-  printf("bd: memory sz is %ld bytes; allocate an size array of length %d\n",
-         (char *)end - p, nsizes);
 
   // allocate bd_sizes array
   bd_sizes = (Sz_info *)p;
