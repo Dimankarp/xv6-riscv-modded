@@ -5,7 +5,6 @@ struct inode;
 struct pipe;
 struct proc;
 struct spinlock;
-struct recursive_spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
