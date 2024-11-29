@@ -203,6 +203,7 @@ void           lst_push(struct list*, void *);
 void*          lst_pop(struct list*);
 void           lst_print(struct list*);
 int            lst_empty(struct list*);
+void           lst_rotate(struct list*);
 
 // buddy.c
 void           bd_init(void*,void*);

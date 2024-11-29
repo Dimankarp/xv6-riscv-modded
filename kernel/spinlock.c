@@ -30,10 +30,10 @@ acquire(struct spinlock *lk)
   //   s1 = &lk->locked
   //   amoswap.w.aq a5, a5, (s1)
   int count = 0;
-  while(__sync_lock_test_and_set(&lk->locked, 1) != 0 && count++ < 1000000)
+  while(__sync_lock_test_and_set(&lk->locked, 1) != 0 && count++ < 100000000)
     ;
   
-  if (count >= 1000000){
+  if (count >= 100000000){
     printf("Deadlock found: %s, %d", lk->name, myproc()->pid);
     panic("deadlock");
       }

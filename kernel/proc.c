@@ -496,6 +496,9 @@ scheduler(void)
     for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
+        //Pseudo-LRU
+        lst_rotate(&procs);
+
         release(&procs_lock);
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
