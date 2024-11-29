@@ -24,6 +24,7 @@ int sleep(int);
 int uptime(void);
 int dump(void);
 int dump2(int, int, void*);
+int mksym(char*, char*, int);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -158,6 +158,7 @@ UPROGS=\
 	$U/_lazytests\
 	$U/_pingpong\
 	$U/_proctest\
+	$U/_symlinktest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
