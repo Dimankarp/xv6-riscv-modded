@@ -5,13 +5,60 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "scheduler.h"
+
+// Maybe this should be placed in param.h
+// but I would argue this is a better locality
+// because the table is what really defines this
+// number.
+#define PRIORITIES_NUM 12
 
 extern Proc_list procs;
 extern struct spinlock procs_lock;
 
+struct proc_queue queues[PRIORITIES_NUM];
+
+// Sticking to Solaris tradition - higher
+// index means higher priority (so the higher -
+// the more important the process is)
+
+// Pri.     Quantums    Pri. on yield   Pri. on wakeup
+// 11          1             11                11        \   System Threads
+// ...                                                   | - (just initproc 
+// 8                                                    /    currently)
+// ------
+// 7                                                    \     Userspace 
+// ...                                                  |  -  threads
+// 0                                                   /
+const struct feedback_row feedback[] = {
+    {8, 0, 4},
+    {8, 0, 4},
+    {6, 1, 5},
+    {6, 2, 5},
+    {4, 2, 6},
+    {4, 3, 6},
+    {2, 4, 6},
+    {2, 5, 7},
+    {1, 11, 11},
+    {1, 11, 11},
+    {1, 11, 11},
+    {1, 11, 11}
+};
 
 
 
+void
+scheduler_init(void){
+    for(int i = 0; i < PRIORITIES_NUM; ++i){
+        initlock(&queues[i].q_lock, "sched_queue");
+        lst_init(&queues[i].queue);
+    }
+}
+
+void
+scheduler_enqueue(struct proc* p, uint16 pri){
+
+}
 
 // Solaris-like Feedback FCFS
 // multiprocess scheduler
