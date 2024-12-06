@@ -98,7 +98,6 @@ struct cpu*     mycpu(void);
 struct cpu*     getmycpu(void);
 struct proc*    myproc();
 void            procinit(void);
-void            scheduler(void) __attribute__((noreturn));
 void            sched(void);
 void            sleep(void*, struct spinlock*);
 void            userinit(void);
@@ -110,6 +109,10 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 void            dump(void);
 int             dump2(int pid, int register_num, uint64 return_value);
+
+// scheduler.c
+void            scheduler(void) __attribute__((noreturn));
+
 // swtch.S
 void            swtch(struct context*, struct context*);
 
@@ -198,6 +201,7 @@ void            virtio_disk_intr(void);
 void           lst_init(struct list*);
 void           lst_remove(struct list*);
 void           lst_push(struct list*, void *);
+void           lst_pushback(struct list*, void *);
 void*          lst_pop(struct list*);
 void           lst_print(struct list*);
 int            lst_empty(struct list*);
