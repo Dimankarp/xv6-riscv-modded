@@ -55,10 +55,62 @@ scheduler_init(void){
     }
 }
 
+static struct proc_entry*
+proc_entry_alloc(void){
+    struct proc_entry* e;
+    if((e = (struct proc_entry*)bd_malloc(sizeof(struct proc_entry))) == 0){
+        panic("proc_entry_alloc");
+    }
+    lst_init(&e->node);
+    return e;
+}
+
+static void
+proc_entry_free(struct proc_entry* e){
+    bd_free(e);
+}
+
+
 void
 scheduler_enqueue(struct proc* p, uint16 pri){
-
+    struct proc_entry* e = proc_entry_alloc();
+    e->p = p;
+    acquire(&queues[pri].q_lock);
+    lst_pushback(&queues[pri].queue, &e->node);
+    release(&queues[pri].q_lock);
 }
+
+// Pops proc_entry with highest priority
+// with p->lock acquired
+// sets p->priotity
+static struct proc_entry*
+prepare_entry(void){
+  for (int i = PRIORITIES_NUM - 1; i >= 0; --i) {
+    acquire(&queues[i].q_lock);
+    if (!lst_empty(&queues[i].queue)) {
+
+      struct proc_entry *entry = (struct proc_entry *)queues[i].queue.next;
+      for (; (struct list *)entry != &queues[i].queue;
+           entry = (struct proc_entry *)entry->node.next) {
+        acquire(&entry->p->lock);
+
+        if (entry->p->state == RUNNABLE) {
+          //p->lock is not released
+          lst_remove(&entry->node);
+          release(&queues[i].q_lock);
+          entry->p->priority = i;
+          return entry;
+        } else if (entry->p->state != SLEEPING)
+          panic("pop_entry");
+
+        release(&entry->p->lock);
+      }
+
+    }
+    release(&queues[i].q_lock);
+  }
+  return 0;
+  }
 
 // Solaris-like Feedback FCFS
 // multiprocess scheduler
@@ -75,40 +127,34 @@ scheduler(void)
   struct cpu *c = mycpu();
 
   c->proc = 0;
-  for(;;){
+  for (;;) {
     // The most recent process to run may have had interrupts
     // turned off; enable them to avoid a deadlock if all
     // processes are waiting.
     intr_on();
+    struct proc_entry *e = prepare_entry();
+    if (e) {
+      p = e->p;
+      proc_entry_free(e);
+      // Switch to chosen process.  It is the process's job
+      // to release its lock and then reacquire it
+      // before jumping back to us.
+      p->state = RUNNING;
+      p->quantums = feedback[p->priority].quantums;
 
-    int found = 0;
-    acquire(&procs_lock);
-    p = (struct proc*)procs.next;
-    for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Pseudo-LRU
-        lst_rotate(&procs);
+      c->proc = p;
+      swtch(&c->context, &p->context);
 
-        release(&procs_lock);
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
-        release(&p->lock);
-        break;
+      if (p->state == RUNNABLE) {
+        scheduler_enqueue(p, feedback[p->priority].tqexp);
+      } else if (p->state == SLEEPING) {
+        scheduler_enqueue(p, feedback[p->priority].slpret);
       }
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
       release(&p->lock);
-    }
-    if(found == 0) {
-      release(&procs_lock);
+    } else {
       // nothing to run; stop running on this core until an interrupt.
       intr_on();
       asm volatile("wfi");

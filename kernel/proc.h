@@ -102,6 +102,7 @@ struct proc {
   struct proc *parent;         // Parent process
 
   // these are private to the process, so p->lock need not be held.
+  uint16 priority;             // schedule priority if running
   uint16 quantums;             // left execution quantums
   int kstackindx;              // index of a kernel stack
   uint64 kstack;               // Virtual address of kernel stack

@@ -111,6 +111,8 @@ void            dump(void);
 int             dump2(int pid, int register_num, uint64 return_value);
 
 // scheduler.c
+void            scheduler_init(void);
+void            scheduler_enqueue(struct proc*, uint16);
 void            scheduler(void) __attribute__((noreturn));
 
 // swtch.S

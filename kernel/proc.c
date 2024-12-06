@@ -318,7 +318,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-
+  scheduler_enqueue(p, SYSPRI);
   release(&p->lock);
 }
 
@@ -396,6 +396,7 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  scheduler_enqueue(np, USERPRI);
   release(&np->lock);
 
   return pid;
