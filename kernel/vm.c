@@ -50,7 +50,7 @@ void
 kvmmapstack(int sindx){
   char *pa = kalloc();
   if (pa == 0)
-    panic("kalloc");
+    panic("kvmmapstack");
   uint64 va = KSTACK((int)(sindx));
   kvmmap(kernel_pagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
 }

@@ -3,7 +3,7 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
-#include "kernel/list.h"
+#include "list.h"
 #include "proc.h"
 #include "defs.h"
 
@@ -22,7 +22,7 @@ struct spinlock procs_lock;
 // but it looks like separate look would benefit
 // perfomance (procs_locks is used at times
 // when procs count doesn't change)
-int procs_num = 0;
+uint32 procs_num = 0;
 struct spinlock procs_num_lock;
 
 int nextpid = 1;
@@ -102,36 +102,39 @@ allocpid()
   return pid;
 }
 
+// procs_lock must be acquired before calling
+static int
+is_stackindex_used(int stackindex){
+  struct proc *p = (struct proc *)procs.next;
+  for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
+    if (p->kstackindx == stackindex) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 int
 allocstack()
 {
-  int sindx, start, flag;
+  int stackindex, start;
 
   acquire(&stack_lock);
   acquire(&procs_lock);
 
-  sindx = nextkstack;
+  stackindex = nextkstack;
   start = nextkstack;
 
   do {
-    flag = 0;
-    struct proc *p = (struct proc *)procs.next;
-    for (; (Proc_list *)p != &procs; p = (struct proc *)p->node.next) {
-      if (p->kstackindx == sindx) {
-        sindx = (sindx + 1) % NPROC;
-        flag = 1;
-        break;
-      }
+    if (is_stackindex_used(stackindex)) {
+      stackindex = (stackindex + 1) % NPROC;
+    } else {
+      release(&procs_lock);
+      nextkstack = (stackindex + 1) % NPROC;
+      release(&stack_lock);
+      return stackindex;
     }
-    if (flag)
-      continue;
-
-    release(&procs_lock);
-    nextkstack = (sindx + 1) % NPROC;
-    release(&stack_lock);
-    return sindx;
-  } while (sindx != start);
-
+  } while (stackindex != start);
   panic("allocstack");
 }
 
@@ -170,10 +173,10 @@ allocproc(void)
   memset(p, 0, sizeof(struct proc));
 
   initlock(&p->lock, "proc");
-  int sindx = allocstack();
-  kvmmapstack(sindx);
-  p->kstackindx = sindx;
-  p->kstack = KSTACK((int)(sindx));
+  int kstackindx = allocstack();
+  kvmmapstack(kstackindx);
+  p->kstackindx = kstackindx;
+  p->kstack = KSTACK((int)(kstackindx));
   p->pid = allocpid();
   p->state = USED;
   
@@ -201,10 +204,10 @@ allocproc(void)
   p->context.sp = p->kstack + PGSIZE;
 
   acquire(&procs_lock);
-  lst_push(&procs, (void *)&p->node);
+  acquire(&p->lock);
+  lst_push(&procs, &p->node);
   release(&procs_lock);
 
-  acquire(&p->lock);
   return p;
 }
 
@@ -218,8 +221,7 @@ freeprocfileds(struct proc *p)
     kfree((void *)p->trapframe);
   if (p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
-  if (p->kstackindx >= 0)
-    kvmunmaptack(p->kstackindx);
+  kvmunmaptack(p->kstackindx);
 }
 
 // unlink proc structure from procs chain.
