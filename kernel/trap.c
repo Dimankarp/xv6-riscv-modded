@@ -80,8 +80,9 @@ usertrap(void)
   // if this is a timer interrupt
 
   if(which_dev == 2){
-    if(--p->quantums == 0)
-          yield();
+    p->quantums--;
+    if (p->quantums == 0)
+      yield();
   }
 
 
@@ -160,7 +161,8 @@ kerneltrap()
 
   struct proc *p = myproc();
   if (which_dev == 2 && p != 0) {
-    if (--p->quantums == 0)
+    p->quantums--;
+    if (p->quantums == 0)
       yield();
   };
 
