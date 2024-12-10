@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, lab-2]
 
 jobs:
   build:
@@ -41,4 +41,7 @@ jobs:
       
       - name: Test Symlink
         if: ${{ github.head_ref == 'symlink' }}
+        run: sh ./ci/test/run.sh usertests
+      - name: Test Scheduler
+        if: ${{ github.head_ref == 'solaris-scheduler' }}
         run: sh ./ci/test/run.sh usertests

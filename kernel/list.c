@@ -49,6 +49,32 @@ lst_push(struct list *lst, void *p)
 }
 
 void
+lst_pushback(struct list *lst, void *p)
+{
+  struct list *e = (struct list *) p;
+  e->next = lst;
+  e->prev = lst->prev;
+  lst->prev->next = e;
+  lst->prev = e;
+}
+
+
+void
+lst_rotate(struct list *lst){
+  struct list* new_tail = lst->next;
+  struct list* old_tail = lst->prev;
+
+  old_tail->next = new_tail;
+  new_tail->prev = old_tail;
+  lst->prev = new_tail;
+
+  lst->next = new_tail->next;
+  lst->next->prev = lst;
+  new_tail->next = lst;
+
+}
+
+void
 lst_print(struct list *lst)
 {
   for (struct list *p = lst->next; p != lst; p = p->next) {

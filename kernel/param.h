@@ -1,4 +1,10 @@
-#define NPROC        64  // maximum number of processes
+// NOTICE! - more processes would require
+// additional PTE page for kernel stacks, 
+// so usertests countfree() will fail
+// with one page missing. Either fix
+// the test or don't increase NPROC.
+
+#define NPROC       255  // maximum number of processes
 #define NCPU          8  // maximum number of CPUs
 #define NOFILE       16  // open files per process
 #define NFILE       100  // open files per system
@@ -12,4 +18,5 @@
 #define FSSIZE       2000  // size of file system in blocks
 #define MAXPATH      128   // maximum file path name
 #define USERSTACK    1     // user stack pages
-
+#define USERPRI      0     // initial priority of user procs
+#define SYSPRI       8     // initial priority of system procs

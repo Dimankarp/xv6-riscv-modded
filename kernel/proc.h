@@ -1,3 +1,4 @@
+#include "list.h"
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -83,6 +84,11 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
 struct proc {
+  // node MUST be first element of proc for correct 
+  // list to proc cast
+  // procs_lock must be held when using this:
+  struct list node;
+
   struct spinlock lock;
 
   // p->lock must be held when using these:
@@ -96,6 +102,9 @@ struct proc {
   struct proc *parent;         // Parent process
 
   // these are private to the process, so p->lock need not be held.
+  uint16 priority;             // schedule priority if running
+  uint16 quantums;             // left execution quantums
+  int kstackindx;              // index of a kernel stack
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
   pagetable_t pagetable;       // User page table

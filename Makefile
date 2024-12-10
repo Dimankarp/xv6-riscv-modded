@@ -13,6 +13,7 @@ OBJS = \
   $K/main.o \
   $K/vm.o \
   $K/proc.o \
+  $K/scheduler.o \
   $K/swtch.o \
   $K/trampoline.o \
   $K/trap.o \
@@ -157,6 +158,7 @@ UPROGS=\
 	$U/_cowtest\
 	$U/_lazytests\
 	$U/_pingpong\
+	$U/_proctest\
 	$U/_symlinktest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
