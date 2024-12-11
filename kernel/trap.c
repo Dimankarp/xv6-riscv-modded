@@ -49,8 +49,9 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  uint64 scause = r_scause();
+  if(scause == 8){
     // system call
 
     if(killed(p))
@@ -65,9 +66,30 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if ((scause == 13 || scause == 15)){
+    uint64 sva = r_stval();
+    if(sva >= MAXVA){
+      printf("Page fault %p - out of bounds\n", (void*)sva);
+      goto err;
+    }
+
+    // printf("PAGE FAULT! %p by proc %d", (void*)sva, p->pid);
+    // printf("It's pagetable is:");
+    // vmprint(p->pagetable);
+    if (!uvmblocked(p->pagetable, sva)){
+      printf("Page fault %p - page not blocked\n", (void*)sva);
+      goto err;
+    }
+      
+    if(uvmcow(p->pagetable, sva) == -1){
+      printf("Page fault %p - kalloc fail\n", (void*)sva);
+      goto err;
+    }
+
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
+err:
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);

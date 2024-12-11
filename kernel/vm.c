@@ -314,40 +314,87 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
-// Given a parent process's page table, copy
-// its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
+// Duplicates given parent process's page entries,
+// that hold lower part of memory of size _sz_,
+// into a child's page table.
+// Removes PTE_W from both source and duplicated
+// entries (for COW optimization).
 // returns 0 on success, -1 on failure.
-// frees any allocated pages on failure.
+// frees any set pte on failure.
 int
-uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+uvmdup(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  // char *mem;
-
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
+  for (i = 0; i < sz; i += PGSIZE) {
+    if ((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
+    if ((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    // if((mem = kalloc()) == 0)
-    // goto err;
-    // memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
-      // kfree(mem);
-      goto err;
+    // printf("%p w %lx r %lx rswl %lx\n",(void*) pa, flags & PTE_W, flags & PTE_R, flags & PTE_RSWL);
+    if(flags & PTE_W){
+      // Blocking writable page
+      flags &= (~PTE_W);
+      flags |= PTE_RSWL;
+      // printf("new  w %lx r %lx rswl %lx\n", flags & PTE_W, flags & PTE_R, flags & PTE_RSWL);
+    }
+    
+    // Increasing ref for old phys page
+    krefinc((void*)pa);
+    
+    // Setting new flags
+    *pte = PA2PTE(pa) | flags;
+
+    if (mappages(new, i, PGSIZE, pa, flags) != 0) {
+      uvmunmap(new, 0, i / PGSIZE, 0);
+      return -1;
     }
   }
+  // printf("New pagetalbe:\n");
+  // vmprint(new);
   return 0;
+}
 
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
+int
+uvmblocked(pagetable_t pagetable, uint64 va){
+  pte_t *pte;
+  if ((pte = walk(pagetable, va, 0)) == 0)
+    return 0; //TO DO BETTER TO PANIC
+  return *pte & PTE_RSWL;
+}
+
+// Copy on write, copies and unblocks
+// blocked paged containing _va_ into _pagetable_
+// returns 0 on success, -1 on kalloc failure
+int
+uvmcow(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  va = PGROUNDDOWN(va);
+  
+  if ((pte = walk(pagetable, va, 0)) == 0)
+    panic("uvmcow: pte should exist");
+  if ((*pte & PTE_RSWL) == 0)
+    panic("uvmcow: page must be blocked");
+
+  char *mem;
+  if ((mem = kalloc()) == 0)
+    return -1;
+  
+
+  memmove(mem, (char *)PTE2PA(*pte), PGSIZE);
+
+  // Decreasing ref for old phys page
+  kfree((void*) PTE2PA(*pte));
+
+  uint flags = PTE_FLAGS(*pte) & (~PTE_RSWL);
+  flags |= PTE_W;
+
+  *pte = PA2PTE(mem) | flags;
+  return -0;
 }
 
 // mark a PTE invalid for user access.
@@ -372,17 +419,25 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   uint64 n, va0, pa0;
   pte_t *pte;
 
-  while(len > 0){
+  while (len > 0) {
     va0 = PGROUNDDOWN(dstva);
-    if(va0 >= MAXVA)
+    if (va0 >= MAXVA)
       return -1;
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
+
+    if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
+      return -1;
+
+    if (*pte & PTE_RSWL) {
+      if (uvmcow(pagetable, va0) == -1)
+        return -1;
+    }
+
+    if ((*pte & PTE_W) == 0)
       return -1;
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
-    if(n > len)
+    if (n > len)
       n = len;
     memmove((void *)(pa0 + (dstva - va0)), src, n);
 
@@ -472,7 +527,7 @@ vmprint_recursion(pagetable_t pagetable, uint8 level) {
     for (int tab = 0; tab < level; ++tab)
       printf(".. ");
     uint64 pa = PTE2PA(pte);
-    printf("..%d: pte %p pa %p\n", i, (void*)pte, (void*)pa);
+    printf("..%d: pte %p pa %p blckd %d\n", i, (void*)pte, (void*)pa, (uint)(pte & PTE_RSWL));
 
     if ((pte & (PTE_R | PTE_W | PTE_X)) == 0)
       vmprint_recursion((pagetable_t)pa, level + 1);
