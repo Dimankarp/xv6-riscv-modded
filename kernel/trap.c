@@ -31,12 +31,13 @@ trapinithart(void)
 }
 
 // handles page fault
-// returns 0 on successful handling
-// on fail printf()'s cause and  returns -1
+// returns 0 on successful handling (or on prc killing)
+// on kalloc fail returns -1
+// on inability to handle returns -2
 static int
 userpagefault(pagetable_t pagetable, uint64 va){
   if (va >= mybrk()) {
-    return -1;
+    return -2;
   }
   // had a dilemma here, whether showing pte_t
   // in this module is appropriate. In the end
@@ -51,7 +52,7 @@ userpagefault(pagetable_t pagetable, uint64 va){
     }
   } else {
     if ((*pte & PTE_BLCKD) == 0) {
-      return -1;
+      return -2;
     }
     if (uvmcow(pte) == -1) {
       return -1;
@@ -85,7 +86,7 @@ usertrap(void)
   if(scause == 8){
     // system call
 
-    if(killed(p))
+    if (killed(p))
       exit(-1);
 
     // sepc points to the ecall instruction,
@@ -97,14 +98,25 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if ((scause == 13 || scause == 15)){
+  } else if ((scause == 13 || scause == 15)) {
     // user page fault
     uint64 sva = r_stval();
-    if (userpagefault(p->pagetable, sva) < 0)
+    switch (userpagefault(p->pagetable, sva)) {
+    case 0:
+      // Page fault handled
+      break;
+    case -1:
+      // kalloc() fail
       setkilled(p);
-  } else if((which_dev = devintr()) != 0){
+      break;
+    case -2:
+      // fail to handle
+      goto err;
+    }
+  } else if ((which_dev = devintr()) != 0) {
     // ok
   } else {
+  err:
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
