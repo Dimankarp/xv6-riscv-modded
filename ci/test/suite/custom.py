@@ -275,17 +275,28 @@ LAZYTESTS = SimpleSuite(
     prologue = ["lazytests starting"],
     tests = [
         PatternTest(
-            name = test_name,
+            name = "lazy alloc",
             timeout = timedelta(seconds = 60),
             patterns = [
-                f"running test {test_name}",
-                f"test {test_name}: OK",
-            ],
-        ) for test_name in (
-            "lazy alloc",
-            "lazy unmap",
-            "out of memory",
-        )
+                f"running test lazy alloc",
+                f"test lazy alloc: OK",
+            ]),
+        PatternTest(
+            name = "lazy unmap",
+            timeout = timedelta(seconds = 60),
+            patterns = [
+                f"running test lazy unmap",
+                *[r"^user page fault:.*brk crossed$" for i in range(64)],
+                f"test lazy unmap: OK",
+            ]),
+        PatternTest(
+            name = "out of memory",
+            timeout = timedelta(seconds = 60),
+            patterns = [
+                f"running test out of memory",
+                r"^user page fault:.*lazy page$",
+                f"test out of memory: OK",
+            ])
     ],
     epilogue = ["ALL TESTS PASSED"],
 )

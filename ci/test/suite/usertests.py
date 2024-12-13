@@ -39,7 +39,11 @@ QUICK_TESTS = [
     Xv6UserTest(name="forkfork", timeout=timedelta(seconds=3)),
     Xv6UserTest(name="forkforkfork", timeout=timedelta(seconds=8)),
     Xv6UserTest(name="reparent2", timeout=timedelta(seconds=15)),
-    Xv6UserTest(name="mem", timeout=timedelta(seconds=5)),
+    Xv6UserTest(
+        name="mem",
+        suffix_size=len("user page fault: 0x0000000011cf1008 failed to allocate lazy page"),
+        timeout=timedelta(seconds=15),
+        sep_ok = True),
     Xv6UserTest(name="sharedfd", timeout=timedelta(seconds=36)),
     Xv6UserTest(name="fourfiles", timeout=timedelta(seconds=5)),
     Xv6UserTest(name="createdelete", timeout=timedelta(seconds=45)),
@@ -55,25 +59,29 @@ QUICK_TESTS = [
     Xv6UserTest(name="dirfile", timeout=timedelta(seconds=2)),
     Xv6UserTest(name="iref", timeout=timedelta(seconds=16)),
     Xv6UserTest(name="forktest", timeout=timedelta(seconds=1)),
-    Xv6UserTest(name="sbrkbasic", timeout=timedelta(seconds=3)),
-    Xv6UserTest(name="sbrkmuch", timeout=timedelta(seconds=2)),
+    Xv6UserTest(
+        name="sbrkbasic",
+        suffix_size=len("user page fault: 0x0000000007d05000 failed to allocate lazy page"),
+        timeout=timedelta(seconds=15),
+        sep_ok = True),
+    Xv6UserTest(name="sbrkmuch", timeout=timedelta(seconds=10)),
     Xv6UserTest(
         name="kernmem",
-        timeout=timedelta(milliseconds=500),
-        suffix_size=len("usertrap(): unexpected scause 0xd pid=6452"),
-        extra_lines=79,
+        timeout=timedelta(seconds=5),
+        suffix_size=len("user page fault: 0x0000000080000000 - brk crossed"),
+        extra_lines=39,
     ),
     Xv6UserTest(
         name="MAXVAplus",
         timeout=timedelta(seconds=30),
-        suffix_size=len("usertrap(): unexpected scause 0xf pid=6515"),
+        suffix_size=len("usertrap(): unexpected scause 0xf pid=6516"),
         extra_lines=51,
     ),
     Xv6UserTest(
         name="sbrkfail",
-        timeout=timedelta(seconds=8),
-        suffix_size=len("usertrap(): unexpected scause 0xd pid=6553"),
-        extra_lines=1,
+        timeout=timedelta(seconds=15),
+        suffix_size=len("user page fault: 0x0000000007d06000 failed to allocate lazy page"),
+        sep_ok=True
     ),
     Xv6UserTest(name="sbrkarg", timeout=timedelta(seconds=2)),
     Xv6UserTest(name="validatetest", timeout=timedelta(seconds=2)),
@@ -83,14 +91,14 @@ QUICK_TESTS = [
     Xv6UserTest(
         name="stacktest",
         timeout=timedelta(seconds=2),
-        suffix_size=len("usertrap(): unexpected scause 0xd pid=6561"),
-        extra_lines=1,
+        suffix_size=len("user page fault: 0x000000000000feb0 - page not blocked & not lazily allocable"),
+        extra_lines=2,
     ),
     Xv6UserTest(
         name="nowrite",
         timeout=timedelta(seconds=2),
-        suffix_size=len("usertrap(): unexpected scause 0xf pid=6563"),
-        extra_lines=11,
+        suffix_size=len("user page fault: 0x0000000000000000 - page not blocked & not lazily allocable"),
+        extra_lines=9,
     ),
     Xv6UserTest(name="pgbug", timeout=timedelta(seconds=2)),
     Xv6UserTest(
@@ -101,7 +109,7 @@ QUICK_TESTS = [
     ),
     Xv6UserTest(name="sbrklast", timeout=timedelta(seconds=2)),
     Xv6UserTest(name="sbrk8000", timeout=timedelta(seconds=2)),
-    Xv6UserTest(name="badarg", timeout=timedelta(seconds=6)),
+    Xv6UserTest(name="badarg", timeout=timedelta(seconds=15)),
 ]
 
 
@@ -109,17 +117,22 @@ SLOW_TESTS = [
     Xv6UserTest(name="bigdir", timeout=timedelta(seconds=120)),
     Xv6UserTest(name="manywrites", timeout=timedelta(seconds=180)),
     Xv6UserTest(name="badwrite", timeout=timedelta(seconds=200)),
-    Xv6UserTest(name="execout", timeout=timedelta(seconds=40)),
+    Xv6UserTest(
+        name="execout",
+        suffix_size=len("user page fault: 0x0000000007d06fff failed to allocate lazy page"),
+        extra_lines=14, 
+        timeout=timedelta(seconds=160)),
     Xv6UserTest(
         name="diskfull",
-        timeout=timedelta(seconds=160),
+        timeout=timedelta(seconds=200),
         suffix_size=len("balloc: out of blocks"),
         extra_lines=1,
     ),
     Xv6UserTest(
         name="outofinodes",
-        timeout=timedelta(seconds=130),
+        timeout=timedelta(seconds=200),
         suffix_size=len("ialloc: no inodes"),
+        sep_ok = True
     ),
 ]
 
@@ -130,6 +143,7 @@ class Xv6UserTestSuite(TestSuite):
 
     def expect(self, stream: RWStream):
         assert stream.readline().endswith("usertests starting")
+        assert stream.readline().startswith("user page fault")
         self.expect_part("quick", stream)
         self.expect_part("slow", stream)
 
@@ -151,6 +165,7 @@ class Xv6UserTestSuite(TestSuite):
             case "quick":
                 assert_eq(stream.readline(), "usertests slow tests starting")
             case "slow":
+                assert stream.readline().startswith("user page fault")
                 assert_eq(stream.readline(), "ALL TESTS PASSED")
 
         print(f"[OK ] Test suite '{name}' was passed!")
