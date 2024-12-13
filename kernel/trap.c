@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "vm.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -27,6 +28,42 @@ void
 trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
+}
+
+// handles page fault
+// returns 0 on successful handling
+// on fail printf()'s cause and  returns -1
+static int
+userpagefault(pagetable_t pagetable, uint64 va){
+  if (va >= mybrk()) {
+    printf("user page fault: %p - brk crossed\n", (void *)va);
+    return -1;
+  }
+  // had a dilemma here, whether showing pte_t
+  // in this module is appropriate. In the end
+  // benefits of reducing pte walks won (otherwise
+  // all the checks should have accepted va and would
+  // have had to translate them to the lowest pte everytime).
+  pte_t *pte = walk(pagetable, va, 0);
+  if (pte == 0 || (*pte & PTE_V) == 0) {
+    // Lazily allocable
+    if (uvmpgalloc(pagetable, va, PTE_W) < 0) {
+      printf("user page fault: %p failed to allocate lazy page\n", (void *)va);
+      return -1;
+    }
+  } else {
+    if ((*pte & PTE_BLCKD) == 0) {
+      printf("user page fault: %p - page not blocked & not lazily allocable\n",
+             (void *)va);
+      return -1;
+    }
+
+    if (uvmcow(pte) == -1) {
+      printf("user page fault: %p - cow failed\n", (void *)va);
+      return -1;
+    }
+  }
+  return 0;
 }
 
 //
@@ -67,24 +104,10 @@ usertrap(void)
 
     syscall();
   } else if ((scause == 13 || scause == 15)){
+    // user page fault
     uint64 sva = r_stval();
-    if(sva >= MAXVA){
-      printf("Page fault %p - out of bounds\n", (void*)sva);
+    if (userpagefault(p->pagetable, sva) < 0)
       goto err;
-    }
-
-    // printf("PAGE FAULT! %p by proc %d", (void*)sva, p->pid);
-    // printf("It's pagetable is:");
-    // vmprint(p->pagetable);
-    if (!uvmblocked(p->pagetable, sva)){
-      printf("Page fault %p - page not blocked\n", (void*)sva);
-      goto err;
-    }
-      
-    if(uvmcow(p->pagetable, sva) == -1){
-      printf("Page fault %p - kalloc fail\n", (void*)sva);
-      goto err;
-    }
 
   } else if((which_dev = devintr()) != 0){
     // ok

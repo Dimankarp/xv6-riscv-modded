@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "vm.h"
 
 /*
  * the kernel's page table.
@@ -57,7 +58,7 @@ kvmmapstack(int sindx){
 
 void
 kvmunmaptack(int sindx){
-  uvmunmap(kernel_pagetable, KSTACK((int)(sindx)), 1, 1);
+  vmunmap(kernel_pagetable, KSTACK((int)(sindx)), 1, 1);
 }
 
 // Initialize the one kernel_pagetable
@@ -182,32 +183,60 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   return 0;
 }
 
+static void
+unmap(pte_t *pte, int do_free){
+  if ((*pte & PTE_V) == 0)
+    panic("unmap: not mapped");
+  if (PTE_FLAGS(*pte) == PTE_V)
+    panic("unmap: not a leaf");
+  if (do_free) {
+    uint64 pa = PTE2PA(*pte);
+    kfree((void *)pa);
+  }
+  *pte = 0;
+}
+
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
+// Optionally free the physical memory. 
+// Don't tolerate lazy allocated pages.
+void
+vmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+{
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("vmunmap: not aligned");
+
+  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      panic("vmunmap: walk");
+    unmap(pte, do_free);
+  }
+}
+
+// Lazy-pages tolerating alternative to vmunmap for user vm area.
+// Remove npages of mappings starting from va. va must be
+// page-aligned. If a mapping don't exist for a page, it's 
+// considered to be lazily  allocated.
+// (i. e. page_va < myproc()->sz)
 // Optionally free the physical memory.
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
-
-  if((va % PGSIZE) != 0)
+  if ((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
-
-  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
-    if(PTE_FLAGS(*pte) == PTE_V)
-      panic("uvmunmap: not a leaf");
-    if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+  for (a = va; a < va + npages * PGSIZE; a += PGSIZE) {
+    if ((pte = walk(pagetable, a, 0)) == 0 || (*pte & PTE_V) == 0) {
+      continue;
     }
-    *pte = 0;
+    unmap(pte, do_free);
   }
 }
+
 
 // create an empty user page table.
 // returns 0 if out of memory.
@@ -238,6 +267,7 @@ uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
   memmove(mem, src, sz);
 }
 
+
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 uint64
@@ -265,6 +295,28 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   }
   return newsz;
 }
+
+// Allocate new page at _va_ in _pagetable_ 
+int
+uvmpgalloc(pagetable_t pagetable, uint64 va, int xperm){
+  va = PGROUNDDOWN(va);
+  pte_t *pte;
+  if ((pte = walk(pagetable, va, 0)) != 0 && *pte & PTE_V)
+    panic("uvmpgalloc: va is mapped");
+
+  char *mem;
+  mem = kalloc();
+  if (mem == 0) {
+    return -1;
+  }
+  memset(mem, 0, PGSIZE);
+  if (mappages(pagetable, va, PGSIZE, (uint64)mem, PTE_R | PTE_U | xperm) < 0) {
+    kfree(mem);
+    return -1;
+  }
+  return 0;
+}
+
 
 // Deallocate user pages to bring the process size from oldsz to
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
@@ -318,7 +370,8 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // that hold lower part of memory of size _sz_,
 // into a child's page table.
 // Removes PTE_W from both source and duplicated
-// entries (for COW optimization).
+// _writeable_ entries (for COW optimization) and 
+// blocks them (sets PTE_BLCKD) .
 // returns 0 on success, -1 on failure.
 // frees any set pte on failure.
 int
@@ -328,18 +381,17 @@ uvmdup(pagetable_t old, pagetable_t new, uint64 sz)
   uint64 pa, i;
   uint flags;
   for (i = 0; i < sz; i += PGSIZE) {
-    if ((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if ((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    (pte = walk(old, i, 0));
+    if (pte == 0 || (*pte & PTE_V) == 0) {
+      // Lazy pages
+      continue;
+    }
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    // printf("%p w %lx r %lx rswl %lx\n",(void*) pa, flags & PTE_W, flags & PTE_R, flags & PTE_RSWL);
     if(flags & PTE_W){
       // Blocking writable page
       flags &= (~PTE_W);
-      flags |= PTE_RSWL;
-      // printf("new  w %lx r %lx rswl %lx\n", flags & PTE_W, flags & PTE_R, flags & PTE_RSWL);
+      flags |= PTE_BLCKD;
     }
     
     // Increasing ref for old phys page
@@ -353,48 +405,34 @@ uvmdup(pagetable_t old, pagetable_t new, uint64 sz)
       return -1;
     }
   }
-  // printf("New pagetalbe:\n");
-  // vmprint(new);
   return 0;
-}
-
-int
-uvmblocked(pagetable_t pagetable, uint64 va){
-  pte_t *pte;
-  if ((pte = walk(pagetable, va, 0)) == 0)
-    return 0; //TO DO BETTER TO PANIC
-  return *pte & PTE_RSWL;
 }
 
 // Copy on write, copies and unblocks
 // blocked paged containing _va_ into _pagetable_
 // returns 0 on success, -1 on kalloc failure
 int
-uvmcow(pagetable_t pagetable, uint64 va)
+uvmcow(pte_t *pte)
 {
-  pte_t *pte;
-  va = PGROUNDDOWN(va);
-  
-  if ((pte = walk(pagetable, va, 0)) == 0)
-    panic("uvmcow: pte should exist");
-  if ((*pte & PTE_RSWL) == 0)
+  if (PTE_FLAGS(*pte) == PTE_V)
+    panic("uvmcow: not a leaf");
+  if ((*pte & PTE_BLCKD) == 0)
     panic("uvmcow: page must be blocked");
 
   char *mem;
   if ((mem = kalloc()) == 0)
     return -1;
-  
 
   memmove(mem, (char *)PTE2PA(*pte), PGSIZE);
 
   // Decreasing ref for old phys page
-  kfree((void*) PTE2PA(*pte));
+  kfree((void *)PTE2PA(*pte));
 
-  uint flags = PTE_FLAGS(*pte) & (~PTE_RSWL);
+  uint flags = PTE_FLAGS(*pte) & (~PTE_BLCKD);
   flags |= PTE_W;
 
   *pte = PA2PTE(mem) | flags;
-  return -0;
+  return 0;
 }
 
 // mark a PTE invalid for user access.
@@ -410,6 +448,35 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+
+// Ensures that page is lazily allocable
+// and allocates it if needed. 
+// _va_ must be page aligned
+// returns allocated pte on succes
+// returns 0 on fail
+static pte_t*
+ensurelazyalloc(pagetable_t pagetable, uint64 va){
+  pte_t* pte;
+  if(va >= MAXVA)
+    return 0;
+  pte = walk(pagetable, va, 0);
+    if ((pte == 0 || (*pte & PTE_V) == 0)){
+        //Lazy alloc
+
+        // I really hate to call mybrk()
+        // here but otherwise a would had
+        // to pass brk everywhere. Awful!
+        if(va >= mybrk())
+          return 0;
+        if(uvmpgalloc(pagetable,va, PTE_W) < 0)
+          return 0;
+        pte = walk(pagetable, va, 0);
+    }
+  return pte;
+}
+
+
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -423,13 +490,12 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     va0 = PGROUNDDOWN(dstva);
     if (va0 >= MAXVA)
       return -1;
-    pte = walk(pagetable, va0, 0);
-
-    if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
+    pte = ensurelazyalloc(pagetable, va0);
+    if (pte == 0 || (*pte & PTE_U) == 0)
       return -1;
 
-    if (*pte & PTE_RSWL) {
-      if (uvmcow(pagetable, va0) == -1)
+    if (*pte & PTE_BLCKD) {
+      if (uvmcow(pte) == -1)
         return -1;
     }
 
@@ -454,13 +520,16 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  pte_t* pte;
   uint64 n, va0, pa0;
 
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    pte = ensurelazyalloc(pagetable, va0);
+    if (pte == 0 || (*pte & PTE_U) == 0)
       return -1;
+    
+    pa0 = PTE2PA(*pte);
     n = PGSIZE - (srcva - va0);
     if(n > len)
       n = len;
@@ -527,7 +596,7 @@ vmprint_recursion(pagetable_t pagetable, uint8 level) {
     for (int tab = 0; tab < level; ++tab)
       printf(".. ");
     uint64 pa = PTE2PA(pte);
-    printf("..%d: pte %p pa %p blckd %d\n", i, (void*)pte, (void*)pa, (uint)(pte & PTE_RSWL));
+    printf("..%d: pte %p pa %p\n", i, (void*)pte, (void*)pa);
 
     if ((pte & (PTE_R | PTE_W | PTE_X)) == 0)
       vmprint_recursion((pagetable_t)pa, level + 1);

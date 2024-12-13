@@ -360,7 +360,7 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_U     (1L << 4) // user can access
 #define PTE_RSWL  (1L << 8)
 #define PTE_RSWH  (1L << 9)
-
+ 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 

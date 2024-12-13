@@ -89,6 +89,17 @@ myproc(void)
   return p;
 }
 
+// Return memory address right after
+// the end of this proc virtual memory
+// area.
+uint64
+mybrk(void)
+{
+  struct proc* p = myproc();
+  return PGROUNDUP(p->sz);
+}
+
+
 int
 allocpid()
 {
@@ -267,7 +278,7 @@ proc_pagetable(struct proc *p)
   // trampoline.S.
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
               (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
-    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    vmunmap(pagetable, TRAMPOLINE, 1, 0);
     uvmfree(pagetable, 0);
     return 0;
   }
@@ -280,8 +291,8 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
-  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  vmunmap(pagetable, TRAMPOLINE, 1, 0);
+  vmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
 }
 
@@ -334,9 +345,7 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
-      return -1;
-    }
+    sz += n;
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -357,7 +366,6 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
-
   // Copy user memory from parent to child.
   if(uvmdup(p->pagetable, np->pagetable, p->sz) < 0){
     acquire(&procs_lock);
@@ -480,7 +488,7 @@ int
 wait(uint64 addr)
 {
   struct proc *pp;
-  int havekids, pid;
+  int havekids, pid, xstate;
   struct proc *p = myproc();
 
   acquire(&wait_lock);
@@ -499,13 +507,7 @@ wait(uint64 addr)
         if (pp->state == ZOMBIE) {
           // Found one.
           pid = pp->pid;
-          if (addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
-                                   sizeof(pp->xstate)) < 0) {
-            release(&pp->lock);
-            release(&procs_lock);
-            release(&wait_lock);
-            return -1;
-          }
+          xstate = pp->xstate;
 
           freeprocfileds(pp);
 
@@ -516,6 +518,10 @@ wait(uint64 addr)
           freeproc(pp);
           release(&wait_lock);
 
+          if (addr != 0 && copyout(p->pagetable, addr, (char *)&xstate,
+                                   sizeof(xstate)) < 0) {
+            return -1;
+          }
           return pid;
         }
         release(&pp->lock);
