@@ -419,18 +419,21 @@ uvmcow(pte_t *pte)
   if ((*pte & PTE_BLCKD) == 0)
     panic("uvmcow: page must be blocked");
 
-  char *mem;
-  if ((mem = kalloc()) == 0)
-    return -1;
+  void *pa = (void *)PTE2PA(*pte);
+  char *mem = pa;
 
-  memmove(mem, (char *)PTE2PA(*pte), PGSIZE);
-
-  // Decreasing ref for old phys page
-  kfree((void *)PTE2PA(*pte));
+  if (kisshared(pa)) {
+    if ((mem = kalloc()) == 0)
+      return -1;
+    memmove(mem, (char *)PTE2PA(*pte), PGSIZE);
+    // Decreasing ref for old phys page
+    kfree((void *)PTE2PA(*pte));
+  } else {
+    mem = pa;
+  }
 
   uint flags = PTE_FLAGS(*pte) & (~PTE_BLCKD);
   flags |= PTE_W;
-
   *pte = PA2PTE(mem) | flags;
   return 0;
 }

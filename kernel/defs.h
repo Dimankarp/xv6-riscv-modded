@@ -66,6 +66,7 @@ void*           kalloc(void);
 void            kfree(void*);
 void            kinit(void);
 void            krefinc(void*);
+int             kisshared(void* pg);
 
 // log.c
 void            initlog(int, struct superblock*);

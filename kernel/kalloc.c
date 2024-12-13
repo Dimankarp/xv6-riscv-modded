@@ -90,3 +90,14 @@ krefinc(void* pg){
   *refs += 1;
   release(&pgrefs_lock);
 }
+
+// Is page shared by multiple processes
+// returns 1 if reference counter of a _pg_
+// page is > 1, otherwise returns 0
+int
+kisshared(void* pg){
+    acquire(&pgrefs_lock);
+    uint8 refs = pgrefs[PG_INDEX(pg)];
+    release(&pgrefs_lock);
+    return refs > 1;
+}
