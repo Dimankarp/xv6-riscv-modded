@@ -9,6 +9,7 @@ struct sleeplock;
 struct stat;
 struct superblock;
 struct list;
+struct shared_segment;
 
 // bio.c
 void            binit(void);
@@ -220,5 +221,12 @@ void           bd_init(void*,void*);
 void           bd_free(void*);
 void           *bd_malloc(uint64);
 int            bd_nblck(int);
+
+// shared.c
+void                    sharedinit(void);
+struct shared_segment*  sharedalloc(uint64);
+void                    sharedfree(struct shared_segment*);
+struct shared_segment*  sharedlookup(int);
+
 
 

@@ -28,7 +28,8 @@ main()
     iinit();         // inode table
     fileinit();      // file table
     virtio_disk_init(); // emulated hard disk
-    scheduler_init();
+    scheduler_init();// feedback scheduler
+    sharedinit();    // shared memory
     userinit();      // first user process
     __sync_synchronize();
     started = 1;

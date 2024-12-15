@@ -104,6 +104,9 @@ extern uint64 sys_close(void);
 extern uint64 sys_dump(void);
 extern uint64 sys_dump2(void);
 extern uint64 sys_mksym(void);
+extern uint64 sys_shmget(void);
+extern uint64 sys_shmmap(void);
+extern uint64 sys_shmlookup(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -132,6 +135,9 @@ static uint64 (*syscalls[])(void) = {
 [SYS_dump]    sys_dump,
 [SYS_dump2]   sys_dump2,
 [SYS_mksym]   sys_mksym,
+[SYS_shmget]  sys_shmget,
+[SYS_shmmap]  sys_shmmap,
+[SYS_shmlookup] sys_shmlookup,
 };
 
 void

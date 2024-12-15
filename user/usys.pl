@@ -39,3 +39,6 @@ entry("uptime");
 entry("dump");
 entry("dump2");
 entry("mksym");
+entry("shmget");
+entry("shmmap");
+entry("shmlookup");
