@@ -106,9 +106,17 @@ sharedfree(struct shared_segment* shared){
   release(&segments_lock);
 }
 
+
+static void
+sharedrefinc(struct shared_segment* seg){
+  acquire(&seg->lock);
+  seg->refs++;
+  release(&seg->lock);
+}
+
 struct shared_segment*
 sharedlookup(int id){
-
+  
   acquire(&segments_lock);
 
   SharedSegs_list *list = (SharedSegs_list *)&segments;
@@ -116,6 +124,7 @@ sharedlookup(int id){
   for (; (SharedSegs_list *)seg != list;
        seg = (struct shared_segment *)seg->node.next) {
     if (seg->id == id) {
+      sharedrefinc(seg);
       release(&segments_lock);
       return seg;
     }
@@ -123,5 +132,3 @@ sharedlookup(int id){
   release(&segments_lock);
   return 0;
 }
-
-
