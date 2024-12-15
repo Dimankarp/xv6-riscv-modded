@@ -573,7 +573,11 @@ sys_pipe(void)
   return 0;
 }
 
-
+// Initializes shared segment of size _sz_,
+// sets _idadr_ to its id and returns its
+// file descriptor for future shmmap().
+// returns fd on success
+// returns -1 of fail
 uint64
 sys_shmget(void)
 {
@@ -610,8 +614,17 @@ sys_shmget(void)
 }
 
 
-// addr must be  less than brk and alignes
-// to next closes page and less than brk in the end
+// Maps shared memory segment into user
+// virtual space starting from address _addr_
+// rounded up to the closest page address.
+//
+// Mapped segment must fit into user virtual space,
+// i.e PGROUNDUP(addr) + seg_size <= brk.
+//
+// Frees already alloted user pages on collision.
+// returns starting address of a mapped segment on success
+// returns 0 on fail
+
 uint64
 sys_shmmap(void)
 {
@@ -648,8 +661,10 @@ sys_shmmap(void)
 }
 
 
-// addr must be  less than brk and alignes
-// to next closes page and less than brk in the end
+// Looks up shared segment with _id_.
+// returns new file descriptor with found
+// segment on success
+// returns -1 on fail
 uint64
 sys_shmlookup(void)
 {

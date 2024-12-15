@@ -35,6 +35,10 @@ sharedinit(void)
   lst_init(&segments);
 }
 
+// Allocates new shared segment of size _sz_
+// rounded up to page sizes.
+// returns pointer on success
+// returns 0 on fail
 struct shared_segment*
 sharedalloc(uint64 sz){
   struct shared_segment *seg = bd_malloc(sizeof(struct shared_segment));
@@ -79,6 +83,9 @@ err:
   return 0;
 }
 
+// Decrements ref counter of a _shared_
+// segment and frees it when this counter
+// reaches 0.
 void
 sharedfree(struct shared_segment* shared){
 
@@ -114,9 +121,12 @@ sharedrefinc(struct shared_segment* seg){
   release(&seg->lock);
 }
 
+// Looks up shared segment with _id_
+// returns pointer of finding
+// returns 0 on fail
 struct shared_segment*
 sharedlookup(int id){
-  
+
   acquire(&segments_lock);
 
   SharedSegs_list *list = (SharedSegs_list *)&segments;
