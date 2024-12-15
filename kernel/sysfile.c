@@ -628,7 +628,7 @@ sys_shmmap(void)
   argaddr(1, &addr);
   addr = PGROUNDUP(addr);
 
-  if(addr + (pages_count * PGSIZE) >= mybrk())
+  if(addr + (pages_count * PGSIZE) > mybrk())
     return 0;
 
   struct proc* p = myproc();
@@ -638,7 +638,7 @@ sys_shmmap(void)
   int i = 0;
   for (; i < pages_count; ++i) {
     uint64 pa = shp->pa;
-    if (mappages(p->pagetable, addr, PGSIZE, pa, PTE_W | PTE_R | PTE_U) < 0) {
+    if (mappages(p->pagetable, addr + i*PGSIZE, PGSIZE, pa, PTE_W | PTE_R | PTE_U) < 0) {
       uvmunmap(p->pagetable, addr, i, 1);
       return 0;
     }

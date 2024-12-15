@@ -26,7 +26,7 @@ int dump(void);
 int dump2(int, int, void*);
 int mksym(char*, char*, int);
 int shmget(int, int*);
-void* shmmap(int, void*);
+char* shmmap(int, void*);
 int shmlookup(int);
 
 // ulib.c
