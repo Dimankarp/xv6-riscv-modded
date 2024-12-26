@@ -32,10 +32,11 @@ class Test(ABC):
 
 class Xv6UserTest(Test):
     def __init__(self, name: str, timeout: timedelta, 
-                       suffix_size: int = 0, extra_lines: int = 0):
+                       suffix_size: int = 0, extra_lines: int = 0, sep_ok: bool = False):
         super().__init__(name, timeout)
         self.suffix_size = suffix_size
         self.extra_lines = extra_lines
+        self.sep_ok = sep_ok
 
     def expect(self, out: RWStream) -> TestResult:
         pattern = "test " + self.name + ": .{" + str(self.suffix_size) + "}"
@@ -61,7 +62,7 @@ class Xv6UserTest(Test):
         return TestResult(duration=end - begin)
     
     def is_ok_separated(self) -> bool:
-        return self.extra_lines != 0 or self.name == "outofinodes"
+        return self.sep_ok or self.extra_lines != 0
 
 
 class PatternTest(Test):

@@ -64,9 +64,11 @@ fileclose(struct file *f)
   }
   release(&ftable.lock);
 
-  if(f->type == FD_PIPE){
+  if (f->type == FD_PIPE) {
     pipeclose(f->pipe, f->writable);
-  } else if(f->type == FD_INODE || f->type == FD_DEVICE){
+  } else if (f->type == FD_SHARED) {
+    sharedfree(f->seg);
+  } else if (f->type == FD_INODE || f->type == FD_DEVICE) {
     begin_op();
     iput(f->ip);
     end_op();
@@ -99,7 +101,7 @@ int
 fileread(struct file *f, uint64 addr, int n)
 {
   int r = 0;
-  if(f->readable == 0)
+  if(f->readable == 0 || f->type == FD_SHARED)
     return -1;
 
   if(f->type == FD_PIPE){
@@ -127,7 +129,7 @@ filewrite(struct file *f, uint64 addr, int n)
 {
   int r, ret = 0;
 
-  if(f->writable == 0)
+  if(f->writable == 0 || f->type == FD_SHARED)
     return -1;
 
   if(f->type == FD_PIPE){

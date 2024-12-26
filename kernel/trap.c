@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "vm.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -29,6 +30,45 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+// handles page fault
+// returns 0 on successful handling (or on prc killing)
+// on kalloc fail returns -1
+// on inability to handle returns -2
+static int
+userpagefault(pagetable_t pagetable, uint64 va){
+  if (va >= MAXVA){
+    return -2;
+  }
+  if(va >= mybrk()) {
+    printf("user page fault: %p - brk crossed\n", (void *)va);
+    return -1;
+  }
+  // had a dilemma here, whether showing pte_t
+  // in this module is appropriate. In the end
+  // benefits of reducing pte walks won (otherwise
+  // all the checks should have accepted va and would
+  // have had to translate them to the lowest pte everytime).
+  pte_t *pte = walk(pagetable, va, 0);
+  // printf("fault %p\n", pte);
+  if (pte == 0 || (*pte & PTE_V) == 0) {
+    // Lazily allocable
+    if (uvmpgalloc(pagetable, va, PTE_W) < 0) {
+      printf("user page fault: %p failed to allocate lazy page\n", (void *)va);
+      return -1;
+    }
+  } else {
+    if ((*pte & PTE_BLCKD) == 0) {
+      printf("user page fault: %p - page not blocked & not lazily allocable\n",(void *)va);
+      return -2;
+    }
+    if (uvmcow(pte) == -1) {
+      printf("user page fault: %p - cow failed\n", (void *)va);
+      return -1;
+    }
+  }
+  return 0;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -49,11 +89,12 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  uint64 scause = r_scause();
+  if(scause == 8){
     // system call
 
-    if(killed(p))
+    if (killed(p))
       exit(-1);
 
     // sepc points to the ecall instruction,
@@ -65,9 +106,25 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } else if ((scause == 13 || scause == 15)) {
+    // user page fault
+    uint64 sva = r_stval();
+    switch (userpagefault(p->pagetable, sva)) {
+    case 0:
+      // Page fault handled
+      break;
+    case -1:
+      // kalloc() fail
+      setkilled(p);
+      break;
+    case -2:
+      // fail to handle
+      goto err;
+    }
+  } else if ((which_dev = devintr()) != 0) {
     // ok
   } else {
+  err:
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);

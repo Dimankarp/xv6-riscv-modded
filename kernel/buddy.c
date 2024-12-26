@@ -343,3 +343,10 @@ void bd_init(void *base, void *end) {
     panic("bd_init: free mem");
   }
 }
+
+// Returns number of managed
+// blocks of size of _sz_ bytes
+int bd_nblck(int sz){
+  return NBLK(_log2(sz / LEAF_SIZE));
+}
+

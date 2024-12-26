@@ -9,6 +9,7 @@ struct sleeplock;
 struct stat;
 struct superblock;
 struct list;
+struct shared_segment;
 
 // bio.c
 void            binit(void);
@@ -63,8 +64,10 @@ void            ramdiskrw(struct buf*);
 
 // kalloc.c
 void*           kalloc(void);
-void            kfree(void *);
+void            kfree(void*);
 void            kinit(void);
+void            krefinc(void*);
+int             kisshared(void* pg);
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -97,6 +100,7 @@ void            setkilled(struct proc*);
 struct cpu*     mycpu(void);
 struct cpu*     getmycpu(void);
 struct proc*    myproc();
+uint64          mybrk(void);
 void            procinit(void);
 void            sched(void);
 void            sleep(void*, struct spinlock*);
@@ -175,8 +179,11 @@ pagetable_t     uvmcreate(void);
 void            uvmfirst(pagetable_t, uchar *, uint);
 uint64          uvmalloc(pagetable_t, uint64, uint64, int);
 uint64          uvmdealloc(pagetable_t, uint64, uint64);
-int             uvmcopy(pagetable_t, pagetable_t, uint64);
+int             uvmpgalloc(pagetable_t, uint64, int);
+int             uvmdup(pagetable_t, pagetable_t, uint64);
+int             uvmcow(pte_t*);
 void            uvmfree(pagetable_t, uint64);
+void            vmunmap(pagetable_t, uint64, uint64, int);
 void            uvmunmap(pagetable_t, uint64, uint64, int);
 void            uvmclear(pagetable_t, uint64);
 pte_t *         walk(pagetable_t, uint64, int);
@@ -184,7 +191,7 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
-
+void            vmprint(pagetable_t);
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);
@@ -213,5 +220,13 @@ void           lst_rotate(struct list*);
 void           bd_init(void*,void*);
 void           bd_free(void*);
 void           *bd_malloc(uint64);
+int            bd_nblck(int);
+
+// shared.c
+void                    sharedinit(void);
+struct shared_segment*  sharedalloc(uint64);
+void                    sharedfree(struct shared_segment*);
+struct shared_segment*  sharedlookup(int);
+
 
 

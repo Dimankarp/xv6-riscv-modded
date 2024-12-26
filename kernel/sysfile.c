@@ -10,6 +10,8 @@
 #include "param.h"
 #include "stat.h"
 #include "spinlock.h"
+#include "list.h"
+#include "shared.h"
 #include "proc.h"
 #include "fs.h"
 #include "sleeplock.h"
@@ -84,13 +86,13 @@ sys_write(void)
 {
   struct file *f;
   int n;
+  int fd;
   uint64 p;
   
   argaddr(1, &p);
   argint(2, &n);
-  if(argfd(0, 0, &f) < 0)
+  if(argfd(0, &fd, &f) < 0)
     return -1;
-
   return filewrite(f, p, n);
 }
 
@@ -333,6 +335,7 @@ sys_open(void)
       end_op();
       return -1;
     }
+
     if(ip->type == T_SYM){
       if(symlink_unwrap(path, ip, 1) != 0){
         iunlockput(ip);
@@ -568,4 +571,118 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+// Initializes shared segment of size _sz_,
+// sets _idadr_ to its id and returns its
+// file descriptor for future shmmap().
+// returns fd on success
+// returns -1 of fail
+uint64
+sys_shmget(void)
+{
+  int sz, fd;
+  uint64 idadr;
+  struct file* f;
+  struct shared_segment* seg;
+  argint(0, &sz);
+  argaddr(1, &idadr);
+  if(sz < 0)
+    return -1;
+
+  if((seg=sharedalloc(sz)) == 0){
+    return -1;
+  }
+  if(idadr){
+    if(copyout(myproc()->pagetable, idadr, (char*)&seg->id, sizeof(seg->id)) <0){
+      sharedfree(seg);
+      return -1;
+    }
+  }
+
+  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+    if(f)
+      fileclose(f);
+    sharedfree(seg);
+    return -1;
+  }
+  f->type = FD_SHARED;
+  f->seg = seg;
+  f->readable = 0;
+  f->writable = 0;
+  return fd;
+}
+
+
+// Maps shared memory segment into user
+// virtual space starting from address _addr_
+// rounded up to the closest page address.
+//
+// Mapped segment must fit into user virtual space,
+// i.e PGROUNDUP(addr) + seg_size <= brk.
+//
+// Frees already alloted user pages on collision.
+// returns starting address of a mapped segment on success
+// returns 0 on fail
+
+uint64
+sys_shmmap(void)
+{
+  uint64 addr;
+  struct file* f;
+  if(argfd(0, 0, &f) < 0)
+    return 0;
+  if(f->type != FD_SHARED){
+    return 0;
+  }
+  struct shared_segment* seg = f->seg;
+  uint16 pages_count = seg->pages_count;
+
+  argaddr(1, &addr);
+  addr = PGROUNDUP(addr);
+
+  if(addr + (pages_count * PGSIZE) > mybrk())
+    return 0;
+
+  struct proc* p = myproc();
+  uvmunmap(p->pagetable, addr, pages_count, 1);
+
+  struct shared_page *shp = (struct shared_page *)seg->pages.next;
+  int i = 0;
+  for (; i < pages_count; ++i) {
+    uint64 pa = shp->pa;
+    if (mappages(p->pagetable, addr + i*PGSIZE, PGSIZE, pa, PTE_W | PTE_R | PTE_U) < 0) {
+      uvmunmap(p->pagetable, addr, i, 1);
+      return 0;
+    }
+    shp = (struct shared_page *)shp->node.next;
+  }
+  return addr;
+}
+
+
+// Looks up shared segment with _id_.
+// returns new file descriptor with found
+// segment on success
+// returns -1 on fail
+uint64
+sys_shmlookup(void)
+{
+  int id, fd;
+  struct file *f;
+  argint(0, &id);
+  struct shared_segment *seg = sharedlookup(id);
+  if (seg == 0)
+    return -1;
+  if ((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0) {
+    if (f)
+      fileclose(f);
+    sharedfree(seg);
+    return -1;
+  }
+  f->type = FD_SHARED;
+  f->seg = seg;
+  f->readable = 0;
+  f->writable = 0;
+  return fd;
 }

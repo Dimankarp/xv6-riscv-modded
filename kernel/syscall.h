@@ -23,3 +23,6 @@
 #define SYS_dump   22
 #define SYS_dump2  23
 #define SYS_mksym  24
+#define SYS_shmget 25
+#define SYS_shmmap 26
+#define SYS_shmlookup  27

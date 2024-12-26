@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main, lab-2]
+    branches: [ main, lab-2, lab-3]
 
 jobs:
   build:
@@ -44,4 +44,7 @@ jobs:
         run: sh ./ci/test/run.sh usertests
       - name: Test Scheduler
         if: ${{ github.head_ref == 'solaris-scheduler' }}
+        run: sh ./ci/test/run.sh usertests
+      - name: Test Shared Mem
+        if: ${{ github.head_ref == 'shared-mem' }}
         run: sh ./ci/test/run.sh usertests
