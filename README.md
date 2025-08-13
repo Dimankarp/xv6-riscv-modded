@@ -1,17 +1,12 @@
-# Форк учебной ОС Xv6 для ITMO CSE
+# xv6 RISC-V Modifications
 
-## Начало работы
+Modifications to xv6 operating system. Includes:
 
-1. [Первый запуск ОС Xv6: Linux](/doc/setup/linux.md)
+1. Symlinks **[[PR]](https://github.com/Dimankarp/xv6-riscv-modded/pull/2)**
+1. Changing kernel allocator to a buddy allocator **[[PR]](https://github.com/Dimankarp/xv6-riscv-modded/pull/3)**
+1. Solaris-like feedback process scheduler **[[PR]](https://github.com/Dimankarp/xv6-riscv-modded/pull/4)**
+1. COW & Lazy page allocation **[[PR]](https://github.com/Dimankarp/xv6-riscv-modded/pull/5)**
+1. Shared memory for IPC  **[[PR]](https://github.com/Dimankarp/xv6-riscv-modded/pull/6)**
 
-2. [Настройка IDE: VSCode](/doc/dev/vscode.md)
+See closed **[PRs](https://github.com/Dimankarp/xv6-riscv-modded/pull/)** or the branch for a specific addition.
 
-3. [Подготовка репозитория](/doc/setup/repo.md)
-
-## Лабораторные работы
-
-1. [Задание 1. Введение в Xv6](/doc/lab/1.md)
-
-2. [Задание 2. Аллокатор](/doc/lab/2.md)
-
-3. [Задание 3. Copy-on-write fork](/doc/lab/3.md)
